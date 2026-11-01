@@ -82,6 +82,9 @@ For “MA20 increased on at least 8 of the last 10 days,” choose **Positive tr
 | Presets | Five editable examples; save/load/rename/delete local presets; import/export JSON including data settings |
 | Downloads | Displayed/all results CSV, Excel, per-stock OHLCV/return/MA CSV, all-stock historical ZIP, JSON configuration |
 | Historical research | Causal screens ending at the selected session; separate opt-in 5/20/60-session forward outcomes |
+| Screen history | Automatic local snapshots on successful runs; new/dropped qualifiers, unavailable data, changed rules and streaks across saved dates |
+| Research lab | Multi-date cohort/control comparisons, cost-aware portfolio simulation, fixed parameter neighbors, chronological slices, frozen declared holdouts and trial ledger |
+| Portfolio concentration | Equal/custom weights, cash, sector exposure, effective holdings, stock correlations, variance contributions and hypothetical basket risk |
 
 Grid sorting supports normalized slope, MA change, R-squared, longest rising streak or recent stock return. Select the ranking rule so comparisons use the same window. The table's rank_* convenience columns use the first valid enabled non-price rule; each rule also has its own detailed columns.
 
@@ -256,13 +259,158 @@ Each rule is PASS, FAIL or UNAVAILABLE. Missing values never pass, even for a no
 
 The engine clips prices at the screening date **before computing indicators**. Normal charts/exports also end there, even if the disk cache contains newer prices. Weekend/holiday requests resolve to the preceding completed session.
 
-**Past screens using current constituents have survivorship bias.** Historical membership data is not supplied. Yahoo adjusted history is retrospectively restated, rather than an archived point-in-time vintage. Corporate actions, security identifiers and source corrections can affect research; full refresh is appropriate for important comparisons.
+**Past screens using current constituents have survivorship bias.** No historical membership feed is supplied; version 1.2 adds support for a user-provided interval dataset. Yahoo adjusted history is retrospectively restated, rather than an archived point-in-time vintage. Corporate actions, security identifiers and source corrections can affect research; full refresh is appropriate for important comparisons.
 
-Forward outcomes are a separate opt-in view with independent future-price input. They cannot feed screening rules or normal history exports. Incomplete horizons stay NA. Individual returns and descriptive statistics are reported; portfolio rebalancing, transaction costs, execution and delisted membership are not modeled.
+Single-date forward outcomes remain a separate opt-in view with independent future-price input. They cannot feed screening rules or normal history exports. Incomplete horizons stay NA. The additional research views below provide separate cohort and portfolio models; they do not change live screening rules.
 
 Yahoo Finance is an unofficial, rate-limited source. Full-universe requests can yield partial results. Ticker failures are displayed rather than interpreted as failed trends or replaced with invented prices. Wait and retry failed prices if limited. Check the provider's applicable use terms. Provider uptime, historical field availability and quote accuracy cannot be guaranteed.
 
-No alternative authenticated data API, archived constituent membership or point-in-time security master is bundled. **PriceProvider** is the replacement point for another API. No additional non-MA technical indicators, portfolio backtester or automated trading are included. Extremely large periods can exceed available history and are rejected/reported as insufficient.
+No alternative authenticated data API, archived constituent dataset or point-in-time security master is bundled. **PriceProvider** is the replacement point for another API. No additional non-MA technical indicators or automated trading are included. Extremely large periods can exceed available history and are rejected/reported as insufficient.
+
+### Screen history and changes
+
+Every successful **Run Screen** saves the applied configuration and full result
+table locally. Open **Screen history** to compare a snapshot with the most recent
+saved **strictly earlier screening date** using the same definition. Changing an
+MA, rule, group, universe, alias, price basis or membership source starts a new
+definition; chart visibility, descriptive risk settings and names do not.
+
+The table distinguishes newly/still/stopped qualifying stocks, unavailable
+prices, and changes to universe membership, and lists rule state changes.
+Repeated runs on one date do not create extra days in the streak. A streak counts
+**consecutive saved distinct dates**, which may omit trading sessions; it does
+not imply the stock qualified on unscreened days. No scheduled task or background
+data download is enabled. Snapshot tables, changes and JSON settings can be exported.
+
+### Historical membership CSV
+
+Open **Historical research → Membership data** to upload intervals, declare the
+coverage dates and describe the source. A synthetic template is downloadable in
+the UI and included in `examples/historical_membership_template.csv`.
+
+Required columns are `ticker,start_date,end_date`; optional columns are
+`company,sector,industry`. Dates use `YYYY-MM-DD`. **Start is inclusive, end is
+exclusive**; a blank end means still active. Overlapping intervals for one
+normalized ticker are rejected. To record a sector change, close one interval
+and begin a new interval on the same effective date. Include removed companies
+and initial membership at the start of declared coverage, not just additions.
+
+Choose **Historical membership CSV** in the sidebar for individual screens, or
+as the study universe. Each date then uses its effective members, and multi-date
+studies download the union including removed members. Requests outside declared
+coverage fail explicitly. Coverage/source are user declarations, not independently
+verified. Missing delisted prices, reused symbols, incomplete intervals, ticker
+aliases and retrospectively adjusted data can still introduce bias. The program
+does not splice security identities or invent delisting returns.
+
+### Outcome comparisons over many dates
+
+1. Apply a screen, then open **Historical research**.
+2. In **Study data**, choose dates, a fixed applied universe or historical CSV,
+   and benchmark; click **Load study data**. This reuses the normal incremental cache.
+3. Open **Outcome comparison**, choose arbitrary positive holding horizons,
+   sampling interval and combined per-side friction, then click
+   **Compare historical outcomes**.
+
+Signals use only the screening close and earlier observations. Unlike the older
+single-date close-to-close view, these comparisons enter at the **next session's
+adjusted open** and exit at the close of the Nth holding session. Adjusted open is
+`raw_open × adjusted_close / raw_close` using that session's adjustment factor.
+A combined cost fraction c per side gives `exit × (1−c) / (entry × (1+c)) − 1`.
+Every holding-period close must exist; gaps and incomplete horizons stay missing.
+
+Controls are stocks with valid **FAIL** signals, the chosen benchmark, and the
+mean nonqualifier outcome in each qualifying stock's same-date sector. Unknown
+signals are excluded explicitly, not assigned zero returns. The summary includes
+coverage, sample sizes, median and 10th/90th percentiles. Mean comparisons give
+each eligible sampled date equal weight; the detailed table retains every date
+and stock, including unavailable outcomes. Same-sector comparisons can be absent
+when no sector control exists. Overlapping outcomes and repeat stocks are
+dependent observations; the app does not claim independent-trial significance.
+
+### Portfolio backtester
+
+Open **Portfolio backtest** after loading study data. Configure capital, maximum
+positions, holding sessions, review interval, entry ranking, commission, slippage,
+cash yield and optional failed-screen exits, then press **Run portfolio backtest**.
+
+- Long-only fractional shares, no borrowing or shorting. Decisions occur at a
+  scheduled review's **close** and trade at the **following open**.
+- This is a **vacancy-filling** model. The new-position budget is prior-close NAV
+  divided by maximum positions, capped by cash. Existing holdings drift; the
+  model does not rebalance them to equal weights. Missing ranking metrics sort
+  last, with ticker as a deterministic tie breaker.
+- A holding period of N includes entry day as session one. It exits at the Nth
+  session's close, or at study end. If enabled, a failed/unknown screen or removal
+  from membership at a scheduled review triggers an exit at the next open.
+- Commission and slippage apply to both sides: entry costs multiply price by
+  `(1+slippage) × (1+commission)` and exit proceeds by
+  `(1−slippage) × (1−commission)`. Idle cash uses an explicit constant annual yield.
+- Missing entry opens cancel that entry with an order diagnostic. **Missing
+  held-position opens/closes stop the experiment**. No forward-filled marks,
+  synthetic liquidation or dropped delisted holding is used to manufacture a
+  complete equity curve.
+- The benchmark starts at the same first investable adjusted open, has the same
+  side costs and liquidates at the final close. Missing benchmark data leaves
+  dependent statistics unavailable. Portfolio Sharpe, CAGR, alpha, beta and
+  drawdown come from the **portfolio equity curve**, not averages of stock ratios.
+
+Equity, drawdown, every trade, orders, coverage and assumptions are downloadable.
+This daily-bar approximation has no tax, borrow, capacity, volume participation,
+market impact, spread model, order book, execution guarantee or point-in-time
+price vintage. Retrospective adjustments are a total-return proxy; historical
+adjusted levels are not literal tradeable cash prices.
+
+### Robustness and declared holdouts
+
+In **Robustness**, choose a training-end date and simulation assumptions.
+**Run training robustness checks** evaluates the base, one MA period ±1, one
+rule lookback ±1, and three chronological training slices. Invalid neighbors
+are recorded as skipped; valid candidates and failures remain in the ledger.
+All references to a perturbed MA are updated consistently. Results remain in
+declared order; there is no automatic best-parameter selection. Slices reset
+capital and liquidate at their own ends, so they are separate experiments.
+
+**Freeze this plan for holdout** saves a copy of the applied rules, settings,
+split, source information and loaded-price fingerprint. **Evaluate frozen holdout**
+uses that saved copy on dates strictly after the split, with new next-open
+orders. Draft edits cannot change it. Reload the same full date range to reuse
+a plan after restarting; a changed price or membership fingerprint is rejected.
+The normal cache is not an immutable archive of old price vintages, so retain
+downloaded evidence if an original price snapshot must be preserved.
+
+A declared holdout does **not** prove the historical period was unseen by you.
+Repeated manual exploration, changing split dates and repeated tests can still
+overfit. Every executed trial/evaluation and frozen plan is retained locally and
+the complete experiment ledger and frozen JSON are downloadable. The app does
+not calculate a probability of backtest overfitting or claim statistical validation.
+
+### Portfolio concentration and correlations
+
+Open **Risk & performance → Portfolio concentration**, choose matching or all
+screened stocks, equal/custom nonnegative weights, and a return window, then
+press **Calculate basket risk**. Stock weights may sum to at most 100%; the
+remainder is cash. Zero-weight stocks are excluded from data requirements.
+
+Every positive-weight stock must have the same N+1 complete adjusted closes.
+The panel reports sector/cash weights, largest position, stock HHI, effective
+holdings, stock-to-stock correlations, variance contributions, diversification
+ratio and portfolio risk statistics. Stock HHI uses invested stock weights
+normalized to one; effective holdings = 1/HHI. Variance contribution is
+`w_i × (Cov × w)_i / (wᵀ Cov w)` and can be negative for a hedging position.
+Diversification ratio is weighted standalone daily volatility divided by basket
+daily volatility; constant-return cases remain undefined.
+
+The hypothetical basket return is `Σ(w_i × stock_return_i) + cash × daily_RF`,
+which assumes **daily target-weight rebalancing without trading costs**. It is a
+diagnostic basket model, distinct from the backtest's drifting holdings. The
+heatmap shows at most 40 stocks for readability; exports include the full matrix.
+
+All snapshots, membership intervals and experiment records are stored under
+`.screener/research/` (or `SCREENER_HOME/research`). They are local application
+data and are excluded from Git. Back up that directory to retain history when
+moving installations. Loading filters or opening panels alone does not download
+study prices or execute simulations.
 
 ## CLI and tests
 
@@ -299,6 +447,9 @@ The independently specified datasets in **examples/synthetic_scenarios.json** in
 | charts.py, exports.py | Auditable Plotly views and CSV/Excel/ZIP downloads |
 | presets.py, presets/ | Editable built-in and local presets |
 | research.py, cli.py, demo.py | Separate forward research, CLI and synthetic data |
+| membership.py, history.py | Effective membership intervals, SQLite screen snapshots and experiment ledger |
+| studies.py, robustness.py | Causal historical signals, cohorts, simulator, recorded training trials and frozen holdouts |
+| portfolio.py, research_dashboard.py | Aligned weighted-basket risk, concentration and button-driven research UI |
 | tests/ | Closed-form, adversarial, missing-data, cache and application interaction cases |
 
 Python package modules live in **trend_screener/**.

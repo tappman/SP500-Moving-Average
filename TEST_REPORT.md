@@ -2,7 +2,7 @@
 
 Original release verification date: October 31, 2026 (America/New_York). Python 3.12.14.
 
-**Latest UI update (version 1.1.1): 121 tests passed.**
+**Latest research update (version 1.2.0): 149 tests passed.**
 
 The original release results below are retained as history. Risk/performance and UI update verification follow at the end.
 
@@ -43,7 +43,7 @@ Membership retrieval timestamp: 2026-11-01T03:39:44.539802+00:00. Successful liv
 - A separate real-browser rendering check could not connect to this environment's isolated local server. A local Chromium installation attempt also failed because the browser download did not supply a valid archive. Pixel layout, native file-download prompts and physical canvas row clicks have **not** been verified in a browser. Streamlit script interactions, Plotly figure data, export bytes and server HTTP readiness were verified independently.
 - Only Python 3.12 was executed here. Python 3.11+ is the declared supported range; a multi-version and Windows/macOS execution matrix was not run.
 - The complete live universe with every quote available could not be verified under Yahoo's current rate limits. Partial availability is reported explicitly and has deterministic regression coverage.
-- Historical membership, archived point-in-time price vintages, alternative authenticated data providers, non-MA indicators, transaction-cost/portfolio backtesting and automated trading are not supplied. Historical screens use current constituents and retrospectively adjusted price history, with the documented bias labels.
+- No historical constituent feed, archived point-in-time price vintages, alternative authenticated data provider, non-MA indicator or automated trading is bundled. Version 1.2 adds user-supplied membership intervals and a cost-aware daily-bar portfolio simulator, documented below. Fixed-current-universe studies retain survivorship-bias labels.
 
 ## Direct dependency versions used
 
@@ -136,3 +136,67 @@ Verification completed:
   (connection refused), so pixel-level visual review and mobile rendering
   remain unverified. Native chart controls and responsive styling are provided;
   interaction checks use Streamlit's script/widget test runtime.
+
+## Research platform update — November 1, 2026
+
+Version 1.2.0 adds automatic successful-screen snapshots, comparisons against
+earlier saved dates, rule state changes, saved-date streaks, multi-date cohort
+comparisons, long-only next-open portfolio simulation with costs, training
+neighborhood/subperiod checks, frozen user-declared holdouts, an experiment
+ledger, historical membership CSV support, and weighted-basket concentration,
+sector exposure, stock correlations and portfolio risk statistics.
+
+### Executed verification
+
+- Full suite: **149 tests passed in 102.88 seconds**. All existing screening,
+  cache, mathematical, chart, risk, export and dashboard cases remain passing.
+- **24 new deterministic numerical/storage tests** cover effective membership
+  boundaries, removed members and source persistence, overlapping/invalid CSV
+  intervals, stable definition hashes, daily snapshot comparison and distinct-date
+  streaks, immutable ledger copies, causal per-date signals, historical universe
+  changes, next-open adjustment and exact holding horizons, costs, missing data,
+  unknown signals, empty qualifier/control/universe dates, failed-screen exits,
+  end liquidation, cash-only curves, frozen-rule evaluation and changed-price
+  rejection, training-only trials, aligned weighted returns, cash/sector weights,
+  HHI/effective holdings, correlations and variance contributions.
+- **Four additional Streamlit interaction cases** exercise history across dates,
+  basket calculation and settings changes, cohort comparisons, portfolio trades,
+  all eight training robustness rows, freeze/evaluate after draft edits, and
+  historical-membership selection before/after a removal date. Downloads are
+  constructed during these script/widget workflows. Existing single-date
+  forward research and applied-screen clipping remain covered.
+- A final focused run of the numerical suite was performed after adding
+  reproducibility metadata to backtest/basket download archives. Ruff and Python
+  compilation also passed after that addition.
+- Larger synthetic study: **503 fictional stocks**, **250 study sessions**
+  (January 3–December 29, 2023), three MA regression rules and a synthetic
+  benchmark. Preparation including synthetic data generation took **3.279 s**.
+  Twelve sampled signal dates and three holding horizons produced **18,108
+  stock/horizon observation records** in **25.421 s**. The portfolio simulation
+  then reused those already-computed review signals: **250 equity rows**, **100
+  closed trades**, **0.224 s additional simulation time**. A 10-stock basket
+  calculation also completed. These timings exclude real network acquisition;
+  the simulated returns are not evidence of an investable strategy's performance.
+- Updated Streamlit process: local `/_stcore/health` returned **HTTP 200** with
+  body `ok`; the check process was terminated afterward.
+
+### Remaining verification and data limits
+
+No full live-market historical study, real historical-membership feed or
+delisting-return dataset was retrieved or verified for this update. The new
+research calculations were verified with deterministic synthetic data. Prior
+release live-download checks above remain historical evidence of the provider
+integration, not proof that every current ticker or study period is available.
+
+Historical membership coverage is supplied and declared by the user. The app
+does not validate a vendor's completeness or reconstruct security identities.
+Missing held-position prices stop a backtest explicitly. Cohort gaps remain
+unavailable. Costs are a daily-bar approximation; tax, impact, spread, liquidity,
+shorting and order execution are not modeled. Frozen plans store definitions and
+price fingerprints, not an immutable archive of provider price vintages. A
+declared holdout does not prove that a person never examined those dates.
+
+Pixel-level browser/mobile review and native Windows/Mac double-click behavior
+remain unverified in this environment. New charts use the same shared styling;
+Streamlit script/widget workflows, numerical results, file generation and local
+server readiness were verified.

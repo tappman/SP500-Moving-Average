@@ -6,6 +6,7 @@ from datetime import date, timedelta
 import math
 import os
 from pathlib import Path
+import sqlite3
 import time
 
 import pandas as pd
@@ -21,12 +22,15 @@ from .models import (
     BOOL_METHODS, METHODS, OPERATORS, REGRESSION_METHODS, RELATION_METHODS,
     Group, MovingAverage, Rule, ScreenConfig, uid,
 )
+from .history import HistoryStore
+from .membership import MembershipHistory
 from .presets import PresetStore, builtins
 from .providers import AliasedProvider, YFinanceProvider
 from .research import forward_returns
 from .rules import window_description
 from .risk import RISK_METRICS, risk_column_label
 from .risk_dashboard import performance_panel, risk_settings_panel
+from .research_dashboard import history_panel, portfolio_panel, research_lab
 from .universe import UniverseService, custom_universe, parse_tickers, provider_symbol
 from .appearance import (
     apply_workspace_style, context_strip, empty_state, sidebar_brand, show_figure, workspace_header,
@@ -100,7 +104,8 @@ def settings_panel(config: ScreenConfig) -> dict:
                               index=default_option(["Live Yahoo Finance", "Synthetic demo (offline)"],
                                                    saved.get("source", "Live Yahoo Finance")),
                               key=key("source"))
-        modes = ["S&P 500 (current constituents)", "Sector", "Custom tickers", "Single stock", "S&P 500 index"]
+        modes = ["S&P 500 (current constituents)", "Sector", "Custom tickers", "Single stock", "S&P 500 index",
+                 "Historical membership CSV"]
         mode = st.selectbox("Stock universe", modes, index=default_option(modes, saved.get("universe_mode")),
                             key=key("universe"))
         demo = source.startswith("Synthetic")
@@ -110,6 +115,17 @@ def settings_panel(config: ScreenConfig) -> dict:
                 st.caption("The chosen ticker names also receive synthetic prices in demo mode.")
         elif mode in {"S&P 500 (current constituents)", "Sector"}:
             st.caption("Current membership is refreshed at most daily. Past screens have survivorship bias.")
+        membership = None
+        if mode == "Historical membership CSV":
+            try:
+                membership = MembershipHistory.load(home() / "research")
+                if membership:
+                    st.caption(f"Membership: {membership.source} · declared coverage "
+                               f"{membership.coverage_start} to {membership.coverage_end}.")
+                else:
+                    st.info("Upload intervals in Historical research → Membership data first.")
+            except (ValueError, KeyError, OSError) as exc:
+                st.warning(f"Cannot read historical membership: {exc}")
         tickers = saved.get("tickers", "AAPL, MSFT, NVDA")
         if mode == "Custom tickers":
             tickers = st.text_area("Tickers (commas or spaces)", value=tickers, key=key("tickers"))
@@ -208,6 +224,8 @@ def settings_panel(config: ScreenConfig) -> dict:
         "period": period, "custom_start": str(display_start), "custom_end": str(end),
         "cache_only": cache_only,
         "ticker_aliases": aliases,
+        **({"membership_digest": membership.digest, "membership_source": membership.source}
+           if membership else {}),
     }
     config.data_settings = result
     return {**result, "screen_date": end, "display_start": display_start,
@@ -470,6 +488,14 @@ def relationship_builder(config):
 
 def resolve_universe(settings):
     mode = settings["universe_mode"]
+    if mode == "Historical membership CSV":
+        membership = MembershipHistory.load(home() / "research")
+        if membership is None:
+            raise ValueError("Upload historical membership intervals in Historical research → Membership data first")
+        frame = membership.at(settings["screen_date"])
+        if frame.empty:
+            raise ValueError("The historical membership source contains no members on this date")
+        return frame
     if mode in {"Custom tickers", "Single stock"}:
         tickers = parse_tickers(settings["tickers"])
         if not tickers or (mode == "Single stock" and len(tickers) != 1):
@@ -565,6 +591,10 @@ def run_screen(config: ScreenConfig, settings):
         st.session_state.pop("excel_download", None)
         st.session_state.pop("forward_table", None)
         st.session_state.run_id = st.session_state.get("run_id", 0) + 1
+        try:
+            st.session_state.saved_screen_id = HistoryStore(home() / "research").save_screen(run)
+        except (OSError, sqlite3.Error) as exc:
+            st.warning(f"Screen completed, but its local history snapshot could not be saved: {exc}")
         progress.empty()
         st.success(f"Screen complete: {run.summary()['passing']} of {len(run.table)} stocks matched on {end}.")
     except (ValueError, RuntimeError, OSError, TimeoutError) as exc:
@@ -879,9 +909,9 @@ def main():
         right.markdown('<p class="lab-toolbar-title">Your screen, ready when you are.</p>'
                        '<p class="lab-toolbar-copy">Configure the builder, then apply. '
                        'Charts and results keep the last completed screen.</p>', unsafe_allow_html=True)
-    build, results, explorer, performance, grid, presets, research = st.tabs(
+    build, results, explorer, performance, grid, presets, research, history = st.tabs(
         ["Build screen", "Results", "Stock explorer", "Risk & performance",
-         "Chart grid", "Saved presets", "Historical research"])
+         "Chart grid", "Saved presets", "Historical research", "Screen history"])
     with build:
         build_panel(config)
     # Config name changes in presets are included before execution and the draft fingerprint.
@@ -891,6 +921,10 @@ def main():
         run_screen(config, settings)
     run = st.session_state.get("run")
     applied = st.session_state.run_settings if run is not None else settings
+    with history:
+        history_panel(home())
+    with research:
+        research_lab(run, applied, home(), research_panel)
     with header_slot.container():
         workspace_header(run, demo=applied["demo"])
         context_strip([
@@ -912,11 +946,13 @@ def main():
         with explorer:
             explorer_panel(run, applied["display_start"])
         with performance:
-            performance_panel(run, demo=applied["demo"], widget_prefix=f"risk_{st.session_state.run_id}")
+            stock_risk, portfolio_risk = st.tabs(["Stock metrics", "Portfolio concentration"])
+            with stock_risk:
+                performance_panel(run, demo=applied["demo"], widget_prefix=f"risk_{st.session_state.run_id}")
+            with portfolio_risk:
+                portfolio_panel(run, home())
         with grid:
             grid_panel(run, applied["display_start"])
-        with research:
-            research_panel(run)
     else:
         messages = [
             (results, "Your results will appear here", "Choose a universe and configure the builder, then click Run Screen. "
@@ -927,13 +963,12 @@ def main():
              "across your selected lookback periods."),
             (grid, "Put your matches side by side", "After screening, choose a ranking metric and compare "
              "interactive stock charts on one page."),
-            (research, "Explore a historical snapshot", "Choose a historical screening date in Data settings and "
-             "run the screen to explore past trends and optional forward outcomes."),
         ]
         for tab, title, description in messages:
             with tab:
                 empty_state(title, description)
     st.markdown('<footer class="lab-footer">MA Trend Lab · Daily market research<br>'
                 'Historical prices describe observed behavior and do not forecast returns. '
-                'Past-date screens use current constituents; historical membership is not supplied.</footer>',
+                'Current-constituent historical screens have survivorship bias. '
+                'Historical membership requires a supplied interval dataset.</footer>',
                 unsafe_allow_html=True)

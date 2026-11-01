@@ -50,6 +50,79 @@ def test_dashboard_run_filter_changes_and_no_repeated_downloads(app, monkeypatch
     assert len(calls) == 1
 
 
+def test_screen_history_saves_and_compares_dates(app):
+    app.button(key="run_screen").click().run()
+    first = app.session_state["saved_screen_id"]
+    app.date_input(key="v0_screen_date").set_value(date(2024, 1, 17)).run()
+    app.button(key="run_screen").click().run()
+    second = app.session_state["saved_screen_id"]
+    assert first != second and not app.exception and not app.error
+    app.selectbox(key="history_snapshot").select(second).run()
+    assert any("Compared with 2024-01-16" in c.value for c in app.caption)
+
+
+def test_portfolio_basket_button_and_weight_editing(app):
+    app.button(key="run_screen").click().run()
+    app.button(key="portfolio_1_calculate").click().run()
+    assert not app.exception and not app.error
+    signature, report = app.session_state["portfolio_1_report"]
+    assert len(report.weights) > 0
+    assert report.correlations.shape[0] == len(report.weights)
+    assert abs(report.weights.weight_pct.sum() - 100) < 1e-8
+    app.number_input(key="portfolio_1_window").set_value(20).run()
+    assert any("Basket settings changed" in c.value for c in app.info)
+    app.button(key="portfolio_1_calculate").click().run()
+    assert app.session_state["portfolio_1_report"][0] != signature
+
+
+def test_research_lab_cohorts_backtest_frozen_holdout_and_ledger(app):
+    app.button(key="run_screen").click().run()
+    app.date_input(key="study_start").set_value(date(2023, 10, 2)).run()
+    app.button(key="study_load").click().run()
+    assert not app.exception and not app.error
+    engine = app.session_state["study"]["engine"]
+    assert len(engine.dates) > 60 and len(engine.universe) == 24
+    app.button(key="cohort_run").click().run()
+    assert not app.exception and not app.error
+    assert len(app.session_state["cohort_result"][2].observations) > 0
+    app.number_input(key="sim_max").set_value(3).run()
+    app.number_input(key="sim_hold").set_value(10).run()
+    app.button(key="sim_run").click().run()
+    assert not app.exception and not app.error
+    assert len(app.session_state["backtest_result"][2].equity) == len(engine.dates)
+    app.button(key="robust_run").click().run()
+    assert not app.exception and not app.error
+    trials = app.session_state["robustness_result"][1]
+    assert len(trials) == 8 and trials.status.eq("COMPLETED").all()
+    app.button(key="robust_freeze").click().run()
+    assert not app.exception and not app.error
+    chosen = app.session_state["frozen_choice"]
+    # Editing a draft without Run Screen must not change the frozen holdout.
+    app.number_input(key="v0_rule_slope_20_threshold").set_value(1000000.0).run()
+    app.button(key="holdout_run").click().run()
+    assert not app.exception and not app.error
+    assert app.session_state["holdout_result"][0] == chosen
+    assert len(app.session_state["holdout_result"][2].equity) > 10
+    assert all(f.index.max().date() == date(2024, 1, 16) for f in app.session_state["run"].frames.values())
+
+
+def test_historical_membership_universe_widget_uses_effective_dates(app, monkeypatch):
+    import os
+    from trend_screener.membership import MembershipHistory
+    membership = MembershipHistory.from_csv(
+        "ticker,start_date,end_date,sector\nDEMO001,2020-01-01,2024-01-16,Tech\n"
+        "DEMO002,2024-01-16,,Health\n", date(2020, 1, 1), date(2024, 12, 31), "Synthetic test")
+    membership.save(Path(os.environ["SCREENER_HOME"]) / "research")
+    app.selectbox(key="v0_universe").select("Historical membership CSV").run()
+    app.button(key="run_screen").click().run()
+    assert not app.exception and not app.error
+    assert app.session_state["run"].table.ticker.tolist() == ["DEMO002"]
+    assert app.session_state["run"].config.data_settings["membership_digest"] == membership.digest
+    app.date_input(key="v0_screen_date").set_value(date(2024, 1, 12)).run()
+    app.button(key="run_screen").click().run()
+    assert app.session_state["run"].table.ticker.tolist() == ["DEMO001"]
+
+
 def test_duplicate_disable_remove_and_relationship(app):
     app.button(key="v0_rule_slope_20_duplicate").click().run()
     assert len(app.session_state["draft"].rules) == 4

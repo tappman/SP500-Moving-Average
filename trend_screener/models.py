@@ -136,7 +136,8 @@ class ScreenConfig:
                 date.fromisoformat(self.data_settings[name])
         choices = {
             "source": {"Live Yahoo Finance", "Synthetic demo (offline)"},
-            "universe_mode": {"S&P 500 (current constituents)", "Sector", "Custom tickers", "Single stock", "S&P 500 index"},
+            "universe_mode": {"S&P 500 (current constituents)", "Sector", "Custom tickers", "Single stock",
+                              "S&P 500 index", "Historical membership CSV"},
             "time_mode": {"Latest completed session", "Historical date"},
             "period": {"3 months", "6 months", "1 year", "2 years", "3 years", "5 years", "10 years", "Custom dates"},
         }
