@@ -159,9 +159,16 @@ class PriceCache:
                         gaps = idx[missing]
                         spans.append((max(start, gaps[0].date() - timedelta(days=14)), gaps[-1].date()))
             if spans and not cache_only:
-                # A single contiguous request per ticker avoids mixing partial adjustment vintages.
-                span = (min(s[0] for s in spans), max(s[1] for s in spans))
-                plans.setdefault(span, []).append(t)
+                # Merge overlapping requests, but do not download the saved middle
+                # when both earlier warm-up and later outcome prices are missing.
+                merged = []
+                for left, right in sorted(spans):
+                    if merged and left <= merged[-1][1]:
+                        merged[-1] = (merged[-1][0], max(right, merged[-1][1]))
+                    else:
+                        merged.append((left, right))
+                for span in merged:
+                    plans.setdefault(span, []).append(t)
         work = [(span, group[i:i + 40]) for span, group in plans.items() for i in range(0, len(group), 40)]
         completed, failed_batches = 0, 0
         total = sum(len(group) for _, group in work)

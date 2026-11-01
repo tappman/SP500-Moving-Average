@@ -101,6 +101,17 @@ def history_panel(home):
         return
     labels = {r.id: f"{r.screen_date} · saved {r.created_at[:19]} UTC · {r.id[:6]}" for r in index.itertuples()}
     identifier = st.selectbox("Saved screen", index.id.tolist(), format_func=labels.get, key="history_snapshot")
+    with st.expander("Delete saved screens"):
+        selected = st.multiselect("Snapshots to delete", index.id.tolist(), default=[identifier],
+                                  format_func=labels.get, key="history_delete_ids")
+        confirmed = st.checkbox("Permanently delete the selected snapshots", key="history_delete_confirm",
+                                help="Removes saved results and their comparison dates. Cached prices, presets, "
+                                     "the applied screen and frozen research remain available. Download snapshots first if needed.")
+        if st.button("Delete selected snapshots", key="history_delete", disabled=not selected or not confirmed):
+            store.delete_screens(selected)
+            for key in ("history_snapshot", "history_delete_ids", "history_delete_confirm"):
+                st.session_state.pop(key, None)
+            st.rerun()
     current = store.screen(identifier)
     old, changes = store.compare(identifier)
     st.caption(f"Definition {current['definition'][:12]} · {len(current['table'])} requested stocks")
@@ -242,7 +253,7 @@ def display_backtest(result, identifier, prefix):
                        file_name=f"backtest_{identifier[:12]}.zip", mime="application/zip", key=prefix + "_export")
 
 
-def load_study(run, applied, home, start, end, mode, benchmark):
+def load_study(run, applied, home, start, end, mode, benchmark, *, cache_only=None, refresh=False):
     membership = load_membership(home) if mode == "Historical membership CSV" else None
     if mode == "Historical membership CSV" and membership is None:
         raise ValueError("Upload historical membership intervals in Membership data first")
@@ -257,11 +268,13 @@ def load_study(run, applied, home, start, end, mode, benchmark):
     tickers = list(dict.fromkeys([*universe.ticker, benchmark]))
     provider = AliasedProvider(DemoProvider() if applied["demo"] else YFinanceProvider(),
                                config.data_settings.get("ticker_aliases", {}))
-    progress = st.progress(0.0, text="Loading study prices…")
+    progress = st.progress(0.0, text="Checking saved study prices…")
     try:
         batch = PriceCache(Path(home) / "prices", provider).get_many(
-            tickers, earliest, end, refresh_recent=False, cache_only=applied["cache_only"],
-            progress=lambda done, total: progress.progress(.8 * done / max(1, total), text=f"Study prices: {done}/{total}"))
+            tickers, earliest, end, refresh_recent=False,
+            cache_only=applied["cache_only"] if cache_only is None else cache_only,
+            refresh_now=refresh, retry_missing=refresh,
+            progress=lambda done, total: progress.progress(.8 * done / max(1, total), text=f"Downloading study prices: {done}/{total}"))
         progress.progress(.85, text="Preparing causal indicators…")
         engine = StudyEngine(batch.frames, universe, config, start, end, membership)
         return engine, batch
@@ -269,10 +282,44 @@ def load_study(run, applied, home, start, end, mode, benchmark):
         progress.empty()
 
 
+RESEARCH_HELP = {
+    "Single-date outcomes": "Start with one applied screen date and measure what happened afterward to its matches "
+        "or all screened stocks. The 5/20/60-session returns use later adjusted closes. Example: a 5-session "
+        "outcome compares the screen close with the close five trading sessions later. Later prices never "
+        "enter that original screen. This describes a group at one date, not a trading strategy.",
+    "Outcome comparison": "Repeat the applied rules at historical review dates, then compare qualifiers with "
+        "valid nonqualifiers, sector controls and the benchmark. Entries use the next open; each horizon is "
+        "measured in trading sessions and applies the chosen per-side cost. Sampling every 21 sessions means "
+        "roughly monthly reviews. Overlapping stocks and holding periods are dependent; averaged cohort "
+        "outcomes are not one portfolio's compounded return. Missing complete horizons stay unavailable.",
+    "Portfolio backtest": "Simulate a long-only portfolio. Rules see prices through the review close; entries "
+        "occur at the next open. Ranking chooses among qualifying stocks when slots are limited. Position "
+        "limits, holding periods, review frequency, fees and slippage determine trades and cash. Existing "
+        "positions drift; fixed-period exits and final liquidation use closes. Inspect trades, equity and "
+        "drawdowns together. Daily bars cannot reproduce execution, taxes, liquidity or market impact.",
+    "Robustness": "Check whether results survive small parameter changes and chronological training slices. "
+        "Freeze rules and inputs before evaluating the later holdout. The ledger records attempts, including "
+        "failures. Choosing the best of many trials can overfit; a user-declared holdout is not proof that "
+        "those dates were never inspected. Frozen data preserves inputs, not the executing software.",
+    "Membership data": "Supply dated constituent intervals to avoid applying today's list to every past date. "
+        "Start dates are included and end dates excluded. Include removed companies and declare the source "
+        "and coverage. The app cannot certify completeness or supply missing delisting prices. Fixed current "
+        "constituents remain survivorship-biased.",
+    "Saved holdouts": "Reopen frozen studies from their archived price bars, membership and rules without "
+        "redownloading market data. Export a portable bundle as a backup or import it on another computer. "
+        "Checksums detect damaged inputs. The executing app version can affect calculations; inputs alone "
+        "do not freeze software. This archive is separate from ordinary screen-history snapshots.",
+}
+
+
 def research_views(home, run, forward_panel):
     outcomes, cohorts, simulation, robustness, membership_tab, saved_tab = st.tabs(
         ["Single-date outcomes", "Outcome comparison", "Portfolio backtest", "Robustness", "Membership data",
          "Saved holdouts"])
+    for tab, (title, explanation) in zip(
+            (outcomes, cohorts, simulation, robustness, membership_tab, saved_tab), RESEARCH_HELP.items()):
+        with tab:
+            st.subheader(title, help=explanation)
     with membership_tab:
         membership_panel(home)
     with saved_tab:
@@ -312,12 +359,23 @@ def research_lab(run, applied, home, forward_panel):
                        "survivorship bias; this is not historical index membership.")
         st.caption("Loading studies uses the same incremental cache as the screener. Holdings require complete "
                    "prices. Yahoo data is retrospectively adjusted and may lack delisted companies.")
-        if st.button("Load study data", type="primary", key="study_load"):
+        saved_only = st.checkbox("Use saved study prices only", value=applied["cache_only"],
+                                 key="study_cache_only", help="Block all price downloads for this study, "
+                                 "including missing warm-up dates. Incomplete histories remain unavailable.")
+        load_col, update_col = st.columns(2)
+        load_clicked = load_col.button("Load study data", type="primary", key="study_load",
+                                      help="Check the shared price cache first; request missing ranges with "
+                                           "a small overlap to detect revised adjustments. No routine refresh.")
+        update_clicked = update_col.button("Update study prices", key="study_update", disabled=saved_only,
+                                           help="Explicitly refresh recent prices, repair gaps and load the study. "
+                                                "Revised adjustments can require a full-history refresh.")
+        if load_clicked or update_clicked:
             try:
                 benchmark = provider_symbol(benchmark_text)
                 if start >= end:
                     raise ValueError("Choose a study start earlier than its end")
-                engine, batch = load_study(run, applied, home, start, end, mode, benchmark)
+                engine, batch = load_study(run, applied, home, start, end, mode, benchmark,
+                                           cache_only=saved_only, refresh=update_clicked)
                 st.session_state.study = {"engine": engine, "batch": batch, "run_id": st.session_state.run_id,
                                           "benchmark": benchmark, "controls": (start, end, mode, benchmark_text),
                                           "demo": applied["demo"]}
@@ -345,6 +403,15 @@ def research_lab(run, applied, home, forward_panel):
                f"prices {engine.fingerprint[:12]} · benchmark {benchmark}")
     st.caption(f"Membership: {engine.membership.source} · {engine.membership.digest[:12]}" if engine.membership
                else "Membership: fixed applied universe at every study date")
+    batch = study["batch"]
+    if batch.downloads:
+        st.caption(f"Study price download requests: {len(batch.downloads)}. See exact ranges below.")
+    else:
+        st.caption("Used saved study prices. No price downloads were requested.")
+    with st.expander("Study price download activity"):
+        st.json(batch.downloads)
+        for warning in batch.warnings:
+            st.warning(warning)
     if study["batch"].errors:
         with st.expander("Study data issues"):
             st.json(study["batch"].errors)

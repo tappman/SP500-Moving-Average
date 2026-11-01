@@ -322,8 +322,8 @@ refresh prices; the previous automatic six-hour latest-mode refresh is removed.
 
 Missing-range extensions include a **14-calendar-day overlap** to check provider
 corrections, so downloads are not always limited to strictly absent dates. When
-both earlier and later history are missing, the loader may request their combined
-contiguous span. The cache API still offers an opt-in `refresh_recent=True`
+both earlier and later history are missing, separate requests preserve the saved
+middle instead of downloading it again. Overlapping request ranges are combined. The cache API still offers an opt-in `refresh_recent=True`
 six-hour policy for explicit callers; normal dashboard/CLI flows do not enable it.
 
 If overlapping close or adjusted-close values have been revised, the full cached span is refreshed to avoid mixing adjustment vintages. Failed refreshes retain old cache and report errors. Writes are atomic and protected by an inter-process writer lock. Requests are batched and retried; a circuit breaker stops new downloads after two entirely failed batches.
@@ -592,3 +592,42 @@ The independently specified datasets in **examples/synthetic_scenarios.json** in
 Python package modules live in **trend_screener/**.
 
 API references: [yfinance](https://ranaroussi.github.io/yfinance/reference/api/yfinance.download.html), [Streamlit](https://docs.streamlit.io/develop/api-reference/data/st.dataframe), [pandas-market-calendars](https://pandas-market-calendars.readthedocs.io/en/latest/usage.html). Constituent fallback provenance: [Open Knowledge S&P 500 dataset](https://github.com/datasets/s-and-p-500-companies).
+
+
+## Historical research controls (1.2.7)
+
+**Load study data** checks the same disk cache as the screener and requests only
+missing ranges, with adjustment-check overlap. Longer studies may need earlier
+warm-up prices, newly included tickers or a different benchmark. Requests for
+missing data at both ends now stay separate. Adjustment revisions or missing
+usable overlap can still require a full-history revalidation; these are listed
+in **Study price download activity** with exact tickers, dates and reasons.
+Loading the same covered range again makes no price requests.
+
+**Use saved study prices only** blocks all downloads, even for missing warm-up
+history. **Update study prices** explicitly refreshes recent prices and repairs
+gaps. This is independent of loading the study normally. Single-date outcomes
+now request prices only through the longest requested horizon (60 trading
+sessions), rather than every date from the screen through today. Their separate
+price activity is also visible. Changing filters alone does not update prices.
+
+Each research tab has a heading question mark explaining what it measures, its
+inputs, timing and interpretation. **Screen history → Delete saved screens**
+lets you choose one or multiple listed snapshots and confirm deletion. This
+removes those saved results and comparison dates, while keeping cached prices,
+presets, the applied screen and research experiments/archives. Deletion changes
+saved-date comparisons and streaks. Download snapshots first if you need backups.
+
+**Stock explorer → Compare numbers with Yahoo Finance** shows Close, Adj Close
+and enabled moving averages together, with a full CSV download. Match the
+session, daily frequency, price basis and MA initialization before comparing.
+The default adjusted-close MA includes dividend adjustments, whereas another
+chart may use Close. Published Yahoo Beta (5Y Monthly) is a different statistic
+from this app's configurable daily-return beta. Sharpe also depends on the
+window, risk-free assumption, sample standard deviation and annualization.
+
+The 1.2.7 verification compared 271 AAPL and SPY bars each with direct Yahoo chart
+responses, then independently recomputed SMA20, EMA20, daily returns and AAPL's
+63-return Sharpe, beta and alpha. Those checks passed; no formula correction was
+needed. See [YAHOO_VALIDATION.md](YAHOO_VALIDATION.md) and TEST_REPORT.md. This verifies source prices and stated formulas,
+not exact agreement with every proprietary Yahoo chart or published ratio.

@@ -67,6 +67,14 @@ class HistoryStore:
         return {"id": row[0], "created_at": row[1], "screen_date": row[2], "definition": row[3],
                 "config": json.loads(row[4]), "table": pd.DataFrame(json.loads(row[5]))}
 
+    def delete_screens(self, identifiers):
+        """Delete explicit snapshot IDs only; preserve prices and experiment inputs."""
+        identifiers = list(dict.fromkeys(identifiers))
+        with self.connect() as db:
+            before = db.total_changes
+            db.executemany("DELETE FROM screens WHERE id=?", [(i,) for i in identifiers])
+            return db.total_changes - before
+
     def compare(self, identifier):
         current = self.screen(identifier)
         with self.connect() as db:

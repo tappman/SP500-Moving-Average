@@ -15,7 +15,7 @@ import streamlit as st
 from .cache import PriceCache
 from .builder import rename_references, sync_averages
 from .collections import StockGroups, apply_selection_edits, selection_signature
-from .calendar import history_start, latest_completed_session
+from .calendar import history_start, latest_completed_session, sessions
 from .charts import information_panel, price_chart
 from .demo import DemoProvider, demo_universe
 from .engine import ScreenRun, screen
@@ -764,6 +764,20 @@ def render_chart(run: ScreenRun, ticker: str, display_start: date, widget_prefix
     columns[0].metric("Latest adjusted close", f"{p:,.2f}" if pd.notna(p) else "Unavailable")
     columns[1].metric("Latest price session", company["latest_date"] or "Unavailable")
     columns[2].metric("Overall result", company["status"])
+    with st.expander("Compare numbers with Yahoo Finance"):
+        st.caption("Use the same completed session, daily frequency and price basis. Adj Close includes "
+                   "dividend adjustments; Close is a different series. Moving averages use the selected "
+                   f"{run.config.price_source} series. EMA values also depend on initialization and loaded "
+                   "warm-up history. Published Yahoo ratios can use different periods and assumptions; "
+                   "a daily-return beta is not its 5Y Monthly beta. Sharpe depends on the window, "
+                   "risk-free rate, sample standard deviation and annualization.")
+        prices = run.frames[ticker]
+        columns = [c for c in ["close", "adj_close", *[m.key for m in run.config.moving_averages if m.enabled]]
+                   if c in prices]
+        st.dataframe(prices[columns].tail(20), width="stretch")
+        st.download_button("Download price and MA comparison", prices[columns].to_csv(),
+                           file_name=f"{ticker}_price_MA_comparison.csv", mime="text/csv",
+                           key=widget_prefix + "_yahoo_comparison")
     rules = [r for r in run.config.rules if r.enabled]
     chosen = st.selectbox("Highlight one rule", [r.id for r in rules],
                           format_func=lambda v: next(r.name for r in rules if r.id == v),
@@ -1117,20 +1131,34 @@ def research_panel(run):
         st.info("No stocks in this population.")
         return
     if st.button("Calculate 5 / 20 / 60-session forward returns"):
+        available = sessions(run.screen_date, latest)
+        outcome_end = available[min(60, len(available) - 1)].date()
         provider = AliasedProvider(DemoProvider() if st.session_state.run_settings["demo"] else YFinanceProvider(),
                                    run.config.data_settings.get("ticker_aliases", {}))
         with st.spinner("Loading separate forward outcomes…"):
             try:
                 data = PriceCache(home() / "prices", provider).get_many(
-                    table.ticker.tolist(), run.screen_date, latest, refresh_recent=False,
+                    table.ticker.tolist(), run.screen_date, outcome_end, refresh_recent=False,
                     cache_only=st.session_state.run_settings["cache_only"],
                 )
-                st.session_state.forward_table = forward_returns(data.frames, run.screen_date, latest)
+                st.session_state.forward_batch = data
+                st.session_state.forward_table = forward_returns(data.frames, run.screen_date, outcome_end)
                 st.session_state.forward_population = population
             except (ValueError, RuntimeError, OSError) as exc:
                 st.error(str(exc))
     outcome = st.session_state.get("forward_table")
     if outcome is not None:
+        batch = st.session_state.get("forward_batch")
+        if batch is not None:
+            if not batch.downloads:
+                st.caption("Used saved forward-outcome prices. No price downloads were requested.")
+            with st.expander("Forward-outcome price download activity"):
+                st.json(batch.downloads)
+                if batch.errors:
+                    st.warning("Some forward-outcome prices are unavailable or updates failed.")
+                    st.json(batch.errors)
+                for warning in batch.warnings:
+                    st.warning(warning)
         st.caption(f"Outcome population used: {st.session_state.get('forward_population')} · "
                    "NA means the full forward horizon is not yet available or has missing observations.")
         st.dataframe(outcome, hide_index=True, width="stretch")

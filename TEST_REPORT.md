@@ -2,7 +2,7 @@
 
 Original release verification date: October 31, 2026 (America/New_York). Python 3.12.14.
 
-**Latest complete audit release (version 1.2.6): 212 tests passed in 184.47 seconds.**
+**Latest complete release (version 1.2.7): 217 tests passed in 206.71 seconds.**
 Ruff, Python compilation and launcher HTTP readiness also passed.
 
 Earlier release results below are retained as history. The audit findings and
@@ -432,3 +432,42 @@ screen. A separate offline AppTest verified the actual status container precedes
 the run toolbar in the main layout and contains the completion message. Ruff and
 Python compilation passed. No new numerical-suite or native-browser pixel check
 was performed for this layout-only update.
+
+
+## Research cache controls and Yahoo validation — version 1.2.7
+
+Historical research uses the shared cache. Missing history at both ends now
+produces separate requests instead of downloading the saved middle. Ordinary
+study loading has no routine refresh; saved-only mode blocks downloads, and
+Update study prices explicitly refreshes/retries. Activity shows exact requested
+ranges and reasons. Single-date outcomes request only through the maximum
+60-session horizon instead of all intervening dates through today.
+
+All six research tabs now have explanatory question-mark headings. Saved screen
+history supports confirmed deletion of one or several chosen snapshots without
+removing prices, presets, applied results, experiments or frozen inputs.
+The explorer includes a raw/adjusted/MA comparison table and downloadable CSV.
+
+Executed checks:
+
+- Final complete suite: **217 passed in 206.71 seconds**, with the same upstream
+  Streamlit/Pandas row-deletion deprecation warning recorded above.
+- Cache/calendar/audit regressions: **41 passed in 14.52 seconds**.
+- Final focused research and forward workflows: **six passed in 26.12 seconds**.
+  New tests verify two separate missing-edge requests, zero repeated study
+  requests, no downloads under saved-only mode, explicit updates, the help
+  payload for every research tab, targeted snapshot deletion/updated comparisons,
+  preserved experiments/applied results, and a 60-session forward download cap
+  with cached reuse on repetition.
+- Live production Yahoo retrieval and separate direct Yahoo chart responses
+  agreed on 271 Close/Adj Close values per symbol for AAPL and SPY. Independently
+  calculated adjusted SMA20, EMA20, daily returns, 63-return Sharpe, beta and
+  annualized alpha matched the engine. See [YAHOO_VALIDATION.md](YAHOO_VALIDATION.md)
+  for exact inputs, outputs, tolerances and comparison limits. The website's
+  proprietary chart/ratio methodology was not established as identical.
+- Ruff and Python compilation passed. The existing-environment launcher started
+  Streamlit, received HTTP 200 with body `ok`, and stopped the test process.
+
+Native Windows/Mac and browser pixel verification limits from prior releases
+remain. Live source checks used two symbols, not the whole S&P 500. Historical
+membership and retrospective-adjustment limits remain unchanged.
