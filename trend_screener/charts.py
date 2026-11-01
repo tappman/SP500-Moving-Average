@@ -1,5 +1,7 @@
 """Interactive Plotly charts exposing exactly the observations used by a selected rule."""
 from datetime import date
+from html import escape
+from textwrap import shorten
 
 import numpy as np
 import pandas as pd
@@ -8,6 +10,7 @@ import plotly.graph_objects as go
 from .metrics import InsufficientData, regression
 from .models import REGRESSION_METHODS, RELATION_METHODS, Rule, ScreenConfig
 from .rules import RuleResult, window_description
+from .appearance import style_figure
 
 COLORS = ["#0D9488", "#F59E0B", "#7C3AED", "#E24B70", "#2563EB", "#B45309", "#0891B2", "#65A30D"]
 
@@ -16,9 +19,12 @@ def price_chart(frame: pd.DataFrame, ticker: str, config: ScreenConfig, display_
                 rule: Rule | None = None, evaluation: RuleResult | None = None,
                 chart_mas: list[str] | None = None, height: int = 560) -> go.Figure:
     fig = go.Figure()
-    if frame.empty:
-        fig.add_annotation(text="No history available", showarrow=False)
-        return fig
+    if frame.empty or not frame["PRICE"].notna().any():
+        fig.add_annotation(text="No prices available for the selected stock and dates",
+                           x=.5, y=.5, xref="paper", yref="paper", showarrow=False)
+        fig.update_layout(title={"text": escape(ticker)}, height=height,
+                          xaxis={"visible": False}, yaxis={"visible": False})
+        return style_figure(fig, compact=height < 450)
     start = pd.Timestamp(display_start)
     if evaluation and evaluation.window_start is not None:
         start = min(start, evaluation.window_start)
@@ -84,24 +90,26 @@ def price_chart(frame: pd.DataFrame, ticker: str, config: ScreenConfig, display_
             fig.add_trace(go.Scatter(x=[y.index[0], y.index[-1]], y=[y.iloc[0], y.iloc[-1]],
                                      mode="markers", name="Start / end",
                                      marker={"size": 12, "symbol": "diamond", "color": color}))
-        text = f"{rule.name} · {'PASS' if passed else 'FAIL' if evaluation.valid else 'UNAVAILABLE'}"
+        state = "PASS" if passed else "FAIL" if evaluation.valid else "UNAVAILABLE"
+        text = f"<b>{escape(shorten(rule.name, width=56, placeholder='…'))} · {state}</b>"
         if evaluation.valid:
             m = evaluation.metrics
-            text += f" · change {m.get('pct_change', float('nan')):.3f}%"
+            text += f"<br>Change {m.get('pct_change', float('nan')):.3f}%"
             if "slope" in m:
+                r2 = f"{m['r2']:.3f}" if np.isfinite(m["r2"]) else "undefined"
                 text += (f" · slope {m['slope']:.5f}"
-                         f" · normalized {m['normalized_slope']:.5f}%/session · R² {m['r2']:.3f}")
+                         f" · normalized {m['normalized_slope']:.5f}%/session · R² {r2}")
             if height < 450:
                 text = f"{rule.ma} · {'PASS' if passed else 'FAIL'}"
                 if "normalized_slope" in m:
-                    text += f" · {m['normalized_slope']:.4f}%/session"
-        fig.add_annotation(text=text, x=0, y=1.13, xref="paper", yref="paper",
+                    text += f" · {m['normalized_slope']:.3f}%/d"
+        fig.add_annotation(text=text, x=0, y=1.15, xref="paper", yref="paper",
                            showarrow=False, xanchor="left", font={"size": 11, "color": color})
     fig.update_layout(
         title={"text": ticker, "font": {"size": 19}}, template="plotly_white", height=height,
-        margin={"l": 20, "r": 20, "t": 88, "b": 15}, hovermode="x unified",
+        margin={"l": 16, "r": 16, "t": 96 if height < 450 else 124, "b": 92}, hovermode="x unified",
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#FFFFFF",
-        legend={"orientation": "h", "y": -0.18},
+        legend={"orientation": "h", "y": -0.12, "x": 0},
         yaxis={"title": source_label, "fixedrange": False},
         xaxis={
             "rangeslider": {"visible": False},
@@ -110,10 +118,10 @@ def price_chart(frame: pd.DataFrame, ticker: str, config: ScreenConfig, display_
                 {"count": 3, "label": "3m", "step": "month", "stepmode": "backward"},
                 {"count": 6, "label": "6m", "step": "month", "stepmode": "backward"},
                 {"step": "all", "label": "All"},
-            ]},
+            ], "bgcolor": "#EDF2F7", "activecolor": "#D6EDE7", "font": {"color": "#0F766E", "size": 11}},
         }, uirevision=f"{ticker}-{rule.id if rule else 'overview'}-{frame.index[-1]}",
     )
-    return fig
+    return style_figure(fig, compact=height < 450)
 
 
 def information_panel(rule: Rule, evaluation: RuleResult) -> pd.DataFrame:

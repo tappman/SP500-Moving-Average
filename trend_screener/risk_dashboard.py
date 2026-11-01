@@ -13,6 +13,7 @@ import streamlit as st
 from .models import ScreenConfig
 from .risk import RISK_METRICS, numeric_prices, rolling_metrics
 from .universe import provider_symbol
+from .appearance import show_figure, style_figure
 
 
 def risk_settings_panel(config: ScreenConfig, key):
@@ -161,7 +162,7 @@ def performance_panel(run, *, demo: bool, widget_prefix: str):
             fig.add_hline(y=0, line_color="#94A3B8", line_dash="dot")
         fig.update_layout(title=f"Rolling {RISK_METRICS[metric]}", template="plotly_white",
                           yaxis_title=RISK_METRICS[metric], height=420, hovermode="x unified")
-        st.plotly_chart(fig, width="stretch", key=widget_prefix + "_rolling_plot")
+        show_figure(style_figure(fig), key=widget_prefix + "_rolling_plot")
         if finite < 2:
             st.caption("Only one complete rolling evaluation is available. Select a longer displayed history "
                        "and run again to see a longer rolling series.")
@@ -182,4 +183,4 @@ def performance_panel(run, *, demo: bool, widget_prefix: str):
                              line={"color": "#E24B70"}, connectgaps=False), row=2, col=1)
     fig.update_layout(template="plotly_white", height=610, hovermode="x unified",
                       legend={"orientation": "h"})
-    st.plotly_chart(fig, width="stretch", key=widget_prefix + "_growth_plot")
+    show_figure(style_figure(fig), key=widget_prefix + "_growth_plot")

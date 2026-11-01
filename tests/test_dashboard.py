@@ -271,3 +271,20 @@ def test_changing_risk_benchmark_downloads_only_the_new_benchmark(app, monkeypat
     assert not app.exception and not app.error
     assert len(calls) == 2 and calls[-1] == ["QQQ"]
     assert app.session_state["run"].table.risk_252_beta.notna().all()
+
+
+def test_result_table_views_keep_the_applied_screen_and_all_metrics_available(app):
+    app.button(key="run_screen").click().run()
+    applied = app.session_state["run"]
+    overview = app.multiselect(key="visible_columns_1_Overview")
+    assert "ticker" in overview.value and "risk_252_sharpe" in overview.value
+    assert "risk_63_sharpe" not in overview.value
+    app.radio(key="table_view_1").set_value("Risk comparison").run()
+    assert not app.exception and not app.error
+    selected = app.multiselect(key="visible_columns_1_Risk comparison").value
+    assert {"risk_63_sharpe", "risk_126_sharpe", "risk_252_sharpe"} <= set(selected)
+    app.radio(key="table_view_1").set_value("Trend details").run()
+    assert {"SMA5", "SMA20", "SMA50"} <= set(app.multiselect(key="visible_columns_1_Trend details").value)
+    assert app.session_state["run"] is applied
+    app.radio(key="table_view_1").set_value("Overview").run()
+    assert not app.exception and not app.error

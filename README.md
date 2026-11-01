@@ -59,8 +59,8 @@ Installation needs Internet access. Once installed, **Synthetic demo (offline)**
 
 1. In the sidebar choose **Live Yahoo Finance** and **S&P 500 (current constituents)**. For an immediate offline trial, choose **Synthetic demo (offline)**.
 2. In **Build screen**, add/edit MA rows. Each has type, period, enabled status and chart visibility. SMA7, SMA37, EMA63 and SMA300 are valid examples. There is no preset-period or rule-count restriction.
-3. Keep SMA20 enabled. Disable or remove the two other example rules.
-4. Expand the MA20 rule. Choose **Regression: normalized slope**, **10 observations**, comparison **>**, threshold **0**.
+3. Keep SMA20 enabled. Open **Build screen → Trend rules** and disable or remove the two other example rules.
+4. Expand the MA20 rule in **Trend rules**. Choose **Regression: normalized slope**, **10 observations**, comparison **>**, threshold **0**.
 5. Click **Run Screen**, then open **Results**.
 6. Select a result row to open its chart below the table, or use **Stock explorer**. Select a rule to highlight. The shaded segment, dashed regression fit and information panel explain exactly why it passed.
 7. Change a threshold and run again. Loaded prices and unchanged indicators are reused.
@@ -87,11 +87,30 @@ Grid sorting supports normalized slope, MA change, R-squared, longest rising str
 
 Edits remain drafts until **Run Screen**. Old results keep their applied configuration, and a banner indicates pending changes. A failed run displays its error and retains the last completed screen.
 
+### Workspace layout
+
+The builder has four focused tabs: **Moving averages**, **Trend rules**,
+**Relationships**, and **Risk settings**. Universe and date controls stay in the
+sidebar, and **Run Screen** stays above the workspace.
+
+Results open in a compact **Overview**. Switch to **Trend details** or **Risk
+comparison** for more metrics, or use **Custom**. **Choose visible columns**
+retains access to every available field, and **Export & download** contains CSV,
+Excel and historical archives. These views change presentation; they keep the
+same applied screen and exports.
+
+Price and performance charts share a light navy-and-teal theme, readable
+tooltips and consistent spacing. The selected rule's chart header separates its
+pass/fail result from its numerical measurements. **Calculation details** expands
+the complete audit underneath each stock chart. Native zoom, pan, legend,
+selection and image-download controls remain available. Styling uses system
+fonts and local assets, with no font downloads.
+
 ## Mathematical definitions
 
 ### Risk and performance analytics
 
-Open **Build screen → Risk & performance settings** to enable these metrics,
+Open **Build screen → Risk settings → Risk & performance settings** to enable these metrics,
 choose lookbacks and select columns. Then click **Run Screen**. The **Risk &
 performance** tab compares the selected stock across every lookback and offers
 rolling metric charts, growth of 100, drawdown and a per-stock CSV download.

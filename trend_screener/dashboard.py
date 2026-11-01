@@ -28,10 +28,47 @@ from .rules import window_description
 from .risk import RISK_METRICS, risk_column_label
 from .risk_dashboard import performance_panel, risk_settings_panel
 from .universe import UniverseService, custom_universe, parse_tickers, provider_symbol
+from .appearance import (
+    apply_workspace_style, context_strip, empty_state, sidebar_brand, show_figure, workspace_header,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 PERIODS = {"3 months": 3, "6 months": 6, "1 year": 12, "2 years": 24,
            "3 years": 36, "5 years": 60, "10 years": 120}
+TABLE_LABELS = {
+    "ticker": "Ticker", "company": "Company", "sector": "Sector", "industry": "Industry",
+    "latest_adjusted_price": "Adjusted close", "daily_return_pct": "Daily return (%)",
+    "return_5d_pct": "5-session return (%)", "return_20d_pct": "20-session return (%)",
+    "rank_normalized_slope": "MA slope (% / session)", "rank_pct_change": "MA change (%)",
+    "rank_r2": "Trend R²", "rank_longest_streak": "Rising streak",
+    "rules_passed": "Rules passed", "rules_unavailable": "Unavailable rules", "status": "Screen result",
+}
+
+
+def table_column_label(name):
+    parts = name.split("_", 2)
+    if len(parts) == 3 and parts[0] == "risk" and parts[1].isdigit() and parts[2] in RISK_METRICS:
+        short = {
+            "sharpe": "Sharpe", "sharpe_daily": "Daily Sharpe", "sortino": "Sortino", "beta": "Beta",
+            "alpha_ann_pct": "Alpha (%/yr)", "alpha_daily_pct": "Alpha (%/day)",
+            "volatility_ann_pct": "Volatility (%/yr)", "max_drawdown_pct": "Max drawdown (%)",
+            "cagr_pct": "CAGR (%)", "calmar": "Calmar", "information_ratio": "Information ratio",
+            "correlation": "Correlation", "regression_r2": "Return R²",
+        }.get(parts[2], RISK_METRICS[parts[2]])
+        return f"{short} · {parts[1]}d"
+    return TABLE_LABELS.get(name, risk_column_label(name))
+
+
+def table_column_formats():
+    numeric = {"latest_adjusted_price", "daily_return_pct", "return_5d_pct", "return_20d_pct",
+               "rank_normalized_slope", "rank_pct_change", "rank_r2"}
+    integer = {"rules_passed", "rules_unavailable", "rank_longest_streak"}
+    return {
+        name: st.column_config.NumberColumn(label, format="%.4f" if name == "rank_normalized_slope" else "%.2f")
+        if name in numeric else st.column_config.NumberColumn(label, format="%d")
+        if name in integer else st.column_config.TextColumn(label, width="medium" if name == "company" else None)
+        for name, label in TABLE_LABELS.items()
+    }
 
 
 def home() -> Path:
@@ -57,6 +94,7 @@ def settings_panel(config: ScreenConfig) -> dict:
     saved = config.data_settings
     today = pd.Timestamp.now(tz="America/New_York").date()
     with st.sidebar:
+        sidebar_brand()
         st.markdown("### Data settings")
         source = st.selectbox("Data source", ["Live Yahoo Finance", "Synthetic demo (offline)"],
                               index=default_option(["Live Yahoo Finance", "Synthetic demo (offline)"],
@@ -373,17 +411,36 @@ def rule_editor(config: ScreenConfig, rule: Rule, relationships: bool = False):
 
 
 def build_panel(config):
-    risk_settings_panel(config, key)
-    moving_average_builder(config)
-    group_builder(config)
-    st.subheader("Trend detection rules")
-    st.caption("Each rule has its own MA, method and lookback. A 10-observation regression uses 9 daily transitions.")
-    for rule in [r for r in config.rules if r.method not in RELATION_METHODS]:
-        rule_editor(config, rule)
-    if st.button("Add trend rule", key=key("add_trend")):
-        options = [m.key for m in config.moving_averages if m.enabled]
-        config.rules.append(Rule(name="New upward trend", ma=options[0] if options else "SMA20"))
-        st.rerun()
+    averages, trends, relationships, risk = st.tabs(
+        ["Moving averages", "Trend rules", "Relationships", "Risk settings"])
+    with averages:
+        with st.container(border=True):
+            moving_average_builder(config)
+    with trends:
+        group_builder(config)
+        st.divider()
+        st.subheader("Trend detection rules")
+        st.caption("Each rule has its own MA, method and lookback. A 10-observation regression uses 9 daily transitions.")
+        for rule in [r for r in config.rules if r.method not in RELATION_METHODS]:
+            rule_editor(config, rule)
+        if st.button("Add trend rule", key=key("add_trend")):
+            options = [m.key for m in config.moving_averages if m.enabled]
+            config.rules.append(Rule(name="New upward trend", ma=options[0] if options else "SMA20"))
+            st.rerun()
+    with relationships:
+        relationship_builder(config)
+    with risk:
+        risk_settings_panel(config, key)
+    try:
+        config.validate()
+        st.caption(f"Draft ready · {sum(r.enabled for r in config.rules)} active conditions · "
+                   f"{sum(m.enabled for m in config.moving_averages)} enabled MAs · "
+                   f"at least {config.required_history()} history sessions requested")
+    except ValueError as exc:
+        st.warning(f"Before running: {exc}")
+
+
+def relationship_builder(config):
     st.subheader("Moving average relationships")
     st.caption("Build bullish/bearish alignments with multiple comparisons. Crossovers test any selected pair.")
     with st.expander("Quick alignment builder"):
@@ -409,13 +466,6 @@ def build_panel(config):
         config.rules.append(Rule(name="Price above moving average", ma="PRICE", method="relative",
                                  other=options[0] if options else "SMA20", lookback=1))
         st.rerun()
-    try:
-        config.validate()
-        st.success(f"{sum(r.enabled for r in config.rules)} active conditions · "
-                   f"{sum(m.enabled for m in config.moving_averages)} enabled MAs · "
-                   f"at least {config.required_history()} warm-up/history sessions requested")
-    except ValueError as exc:
-        st.warning(f"Before running: {exc}")
 
 
 def resolve_universe(settings):
@@ -546,11 +596,11 @@ def render_chart(run: ScreenRun, ticker: str, display_start: date, widget_prefix
         selected = st.multiselect("Moving averages on chart", [m.key for m in active], default=selected,
                                    key=widget_prefix + "_mas")
     evaluation = run.evaluations[ticker][rule.id]
-    st.plotly_chart(price_chart(run.frames[ticker], ticker, run.config, display_start, rule,
-                               evaluation, selected), width="stretch", key=widget_prefix + "_plot")
+    show_figure(price_chart(run.frames[ticker], ticker, run.config, display_start, rule,
+                            evaluation, selected), key=widget_prefix + "_plot")
     st.caption("The shaded segment contains exactly the observations used by the highlighted rule. "
                "The chart ends at the screening date. Red markers indicate declining MA transitions; gray means flat.")
-    with st.expander("Calculation details", expanded=True):
+    with st.expander("Calculation details"):
         st.dataframe(information_panel(rule, evaluation), hide_index=True, width="stretch")
     with st.expander("Every rule for this stock"):
         st.dataframe(pd.DataFrame([{
@@ -566,6 +616,7 @@ def render_chart(run: ScreenRun, ticker: str, display_start: date, widget_prefix
 
 
 def results_panel(run: ScreenRun, display_start):
+    st.subheader("Screening results")
     summary = run.summary()
     cols = st.columns(5)
     for col, name, label in zip(cols, ["requested", "analyzed", "insufficient", "passing", "passing_pct"],
@@ -589,27 +640,47 @@ def results_panel(run: ScreenRun, display_start):
         st.caption(f"Membership snapshot: {snapshot.retrieved_at} · source: {snapshot.source}")
     matches_only = st.toggle("Show matching stocks only", value=True, key="matches_only")
     table = run.passing if matches_only else run.table
-    default_columns = [c for c in ["ticker", "company", "sector", "latest_adjusted_price", "daily_return_pct",
-                                   "return_5d_pct", "return_20d_pct", "rank_normalized_slope", "rank_r2",
-                                   "rules_passed", "rules_unavailable", "status"] if c in table]
+    view = st.radio("Table view", ["Overview", "Trend details", "Risk comparison", "Custom"],
+                    horizontal=True, key=f"table_view_{st.session_state.run_id}")
+    if view == "Risk comparison" and not run.config.risk.enabled:
+        st.info("Enable metrics in Build screen → Risk settings and run again to compare risk statistics.")
+    overview = ["ticker", "company", "latest_adjusted_price", "daily_return_pct",
+                "rank_normalized_slope", "status"]
+    trend = ["ticker", "company", "latest_adjusted_price",
+             *[m.key for m in run.config.moving_averages if m.enabled],
+             "rank_normalized_slope", "rank_pct_change", "rank_r2", "rank_longest_streak",
+             "rules_passed", "rules_unavailable", "status"]
+    risk_columns = []
     if run.config.risk.enabled:
-        default_columns += [f"risk_{n}_{m}" for n in run.config.risk.lookbacks for m in run.config.risk.metrics]
+        horizon = max(run.config.risk.lookbacks)
+        overview += [f"risk_{horizon}_{m}" for m in ("sharpe", "beta") if m in run.config.risk.metrics]
+        risk_columns = [f"risk_{n}_{m}" for n in run.config.risk.lookbacks for m in run.config.risk.metrics]
         st.caption(f"Risk benchmark: {run.config.risk.benchmark} · "
                    f"annual risk-free assumption: {run.config.risk.risk_free_pct:g}%. "
                    "Risk metrics use adjusted simple returns; blank values indicate incomplete data or undefined ratios. "
                    "The risk panel compares periods and explains the calculations.")
-    visible = st.multiselect("Visible columns", list(table.columns), default=default_columns,
-                             format_func=risk_column_label,
-                             key=f"visible_columns_{st.session_state.run_id}")
+    defaults = {
+        "Overview": overview, "Trend details": trend,
+        "Risk comparison": ["ticker", "company", *risk_columns, "status"],
+        "Custom": [*overview, "sector", "return_5d_pct", "return_20d_pct", "rules_passed", "rules_unavailable"],
+    }
+    default_columns = list(dict.fromkeys(c for c in defaults[view] if c in table))
+    with st.expander("Choose visible columns"):
+        visible = st.multiselect("Visible columns", list(table.columns), default=default_columns,
+                                 format_func=table_column_label,
+                                 key=f"visible_columns_{st.session_state.run_id}_{view}")
     if not visible:
         visible = ["ticker", "status"]
     if table.empty:
         st.info("No stocks matched. Inspect all stocks by turning off the matching-only toggle, or change the rules.")
     event = st.dataframe(table[visible], hide_index=True, width="stretch", height=400,
                           column_config={
-                              name: st.column_config.NumberColumn(risk_column_label(name), format="%.4f")
+                              **table_column_formats(),
+                              **{
+                              name: st.column_config.NumberColumn(table_column_label(name),
+                                                                   help=risk_column_label(name), format="%.4f")
                               for name in visible if any(name == f"risk_{n}_{m}"
-                                                        for n in run.config.risk.lookbacks for m in RISK_METRICS)},
+                                                        for n in run.config.risk.lookbacks for m in RISK_METRICS)}},
                           selection_mode="single-row", on_select="rerun",
                           key=f"results_table_{st.session_state.run_id}_{matches_only}")
     st.caption("Select a row to open its detailed chart below. Column headers sort the table. "
@@ -627,22 +698,23 @@ def results_panel(run: ScreenRun, display_start):
         )
         breadth["passing_pct"] = 100 * breadth.passing / breadth.requested
         st.dataframe(breadth, width="stretch")
-    st.download_button("Download displayed results CSV", table.to_csv(index=False),
-                        file_name=f"screen_{run.screen_date}.csv", mime="text/csv")
-    st.download_button("Download all results and diagnostics CSV", run.table.to_csv(index=False),
-                        file_name=f"all_results_{run.screen_date}.csv", mime="text/csv")
-    c = st.columns(2)
-    if c[0].button("Prepare Excel download"):
-        st.session_state.excel_download = excel_bytes(run.table)
-    if st.session_state.get("excel_download"):
-        c[0].download_button("Download Excel", st.session_state.excel_download,
-                             file_name=f"screen_{run.screen_date}.xlsx",
-                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    if c[1].button("Prepare historical prices and MA archive"):
-        st.session_state.history_download = history_zip(run)
-    if st.session_state.get("history_download"):
-        c[1].download_button("Download histories ZIP", st.session_state.history_download,
-                             file_name=f"histories_{run.screen_date}.zip", mime="application/zip")
+    with st.expander("Export & download"):
+        st.download_button("Download displayed results CSV", table.to_csv(index=False),
+                            file_name=f"screen_{run.screen_date}.csv", mime="text/csv")
+        st.download_button("Download all results and diagnostics CSV", run.table.to_csv(index=False),
+                            file_name=f"all_results_{run.screen_date}.csv", mime="text/csv")
+        c = st.columns(2)
+        if c[0].button("Prepare Excel download"):
+            st.session_state.excel_download = excel_bytes(run.table)
+        if st.session_state.get("excel_download"):
+            c[0].download_button("Download Excel", st.session_state.excel_download,
+                                 file_name=f"screen_{run.screen_date}.xlsx",
+                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        if c[1].button("Prepare historical prices and MA archive"):
+            st.session_state.history_download = history_zip(run)
+        if st.session_state.get("history_download"):
+            c[1].download_button("Download histories ZIP", st.session_state.history_download,
+                                 file_name=f"histories_{run.screen_date}.zip", mime="application/zip")
 
 
 def explorer_panel(run, display_start):
@@ -704,9 +776,9 @@ def grid_panel(run, display_start):
         cols = st.columns(per_row)
         for col, ticker in zip(cols, subset.iloc[offset:offset + per_row].ticker):
             with col:
-                st.plotly_chart(price_chart(run.frames[ticker], ticker, run.config, display_start,
-                                            rule, run.evaluations[ticker][rule.id], height=370),
-                                 width="stretch", key=f"grid_{st.session_state.run_id}_{ticker}")
+                show_figure(price_chart(run.frames[ticker], ticker, run.config, display_start,
+                                         rule, run.evaluations[ticker][rule.id], height=370),
+                            key=f"grid_{st.session_state.run_id}_{ticker}")
 
 
 def presets_panel(config):
@@ -794,26 +866,19 @@ def research_panel(run):
 
 def main():
     st.set_page_config(page_title="MA Trend Lab · S&P 500 Screener", page_icon="📈", layout="wide")
-    st.markdown("""
-    <style>
-    .block-container {padding-top: 2rem; padding-bottom: 3rem;}
-    div[data-testid="stMetric"] {background: white; border: 1px solid #E2E8F0;
-      border-radius: 12px; padding: 16px;}
-    div[data-testid="stMetricLabel"] {color: #64748B;}
-    h1 {letter-spacing: -0.035em;}
-    </style>
-    """, unsafe_allow_html=True)
+    apply_workspace_style()
     if "draft" not in st.session_state:
         st.session_state.draft = builtins()[0]
         st.session_state.editor_version = 0
     config = st.session_state.draft
-    st.caption("MOVING AVERAGE RESEARCH PLATFORM")
-    st.title("MA Trend Lab")
-    st.write("Find the moving average lines going up — and inspect exactly why they qualify.")
+    header_slot = st.empty()
     settings = settings_panel(config)
-    left, right = st.columns([1, 3])
-    run_clicked = left.button("Run Screen", type="primary", width="stretch", key="run_screen")
-    right.caption("Edit your conditions, then run. Charts and results use the last applied configuration.")
+    with st.container(border=True, key="run_toolbar"):
+        left, right = st.columns([1, 3])
+        run_clicked = left.button("Run Screen", type="primary", width="stretch", key="run_screen")
+        right.markdown('<p class="lab-toolbar-title">Your screen, ready when you are.</p>'
+                       '<p class="lab-toolbar-copy">Configure the builder, then apply. '
+                       'Charts and results keep the last completed screen.</p>', unsafe_allow_html=True)
     build, results, explorer, performance, grid, presets, research = st.tabs(
         ["Build screen", "Results", "Stock explorer", "Risk & performance",
          "Chart grid", "Saved presets", "Historical research"])
@@ -825,10 +890,17 @@ def main():
     if run_clicked:
         run_screen(config, settings)
     run = st.session_state.get("run")
-    if run is not None:
-        if config.to_json() != st.session_state.run_config_json:
+    applied = st.session_state.run_settings if run is not None else settings
+    with header_slot.container():
+        workspace_header(run, demo=applied["demo"])
+        context_strip([
+            ("Universe", applied["universe_mode"]),
+            ("Source", "Synthetic demo" if applied["demo"] else "Yahoo Finance"),
+            ("Session", run.screen_date if run is not None else applied["screen_date"]),
+        ])
+        if run is not None and config.to_json() != st.session_state.run_config_json:
             st.warning("Draft settings have changed. Click Run Screen to update the results.")
-        applied = st.session_state.run_settings
+    if run is not None:
         with results:
             if applied["demo"]:
                 st.info("SYNTHETIC DEMO RESULTS · No real prices were used.")
@@ -846,9 +918,22 @@ def main():
         with research:
             research_panel(run)
     else:
-        for tab in (results, explorer, performance, grid, research):
+        messages = [
+            (results, "Your results will appear here", "Choose a universe and configure the builder, then click Run Screen. "
+             "Synthetic demo in Data settings is ready to explore without a market-data connection."),
+            (explorer, "See the story behind each trend", "Run a screen, select a stock, and inspect the exact "
+             "moving-average segment and regression used by each rule."),
+            (performance, "Compare return and risk", "Run a screen to compare Sharpe, beta, alpha and other metrics "
+             "across your selected lookback periods."),
+            (grid, "Put your matches side by side", "After screening, choose a ranking metric and compare "
+             "interactive stock charts on one page."),
+            (research, "Explore a historical snapshot", "Choose a historical screening date in Data settings and "
+             "run the screen to explore past trends and optional forward outcomes."),
+        ]
+        for tab, title, description in messages:
             with tab:
-                st.info("Configure a screen and click Run Screen. Choose Synthetic demo in Data settings to try it offline.")
-    st.divider()
-    st.caption("Research based on historical prices. Trend and acceleration metrics describe observed behavior. "
-               "They do not forecast returns. No historical constituent membership is supplied.")
+                empty_state(title, description)
+    st.markdown('<footer class="lab-footer">MA Trend Lab · Daily market research<br>'
+                'Historical prices describe observed behavior and do not forecast returns. '
+                'Past-date screens use current constituents; historical membership is not supplied.</footer>',
+                unsafe_allow_html=True)

@@ -2,7 +2,9 @@
 
 Original release verification date: October 31, 2026 (America/New_York). Python 3.12.14.
 
-The original release results below are retained as history. The risk/performance update verification follows at the end.
+**Latest UI update (version 1.1.1): 121 tests passed.**
+
+The original release results below are retained as history. Risk/performance and UI update verification follow at the end.
 
 ## Automated checks
 
@@ -109,3 +111,28 @@ unverified here. Streamlit widget/script interactions, Plotly figure creation,
 server readiness and exported bytes were checked. Historical statistics use
 current constituents and retrospectively adjusted data, as described in README.
 The risk-free input is an explicit constant annual assumption, not a live rate.
+
+## UI polish update — November 1, 2026
+
+Version 1.1.1 applies a shared light/navy/teal design, a branded workspace
+header and sidebar, clearer summary cards, focused builder tabs, compact
+Overview/Trend details/Risk comparison/Custom table views, friendly column
+labels, grouped export controls and consistent Plotly chart styling. Detailed
+calculation audits remain expandable, and all analytical controls are retained.
+No screening or risk/return formulas changed.
+
+Verification completed:
+
+- Full suite: **121 tests passed in 44.48 seconds**.
+- The new table-view interaction test switches views and verifies that risk
+  horizons and MA details remain available without replacing the applied run.
+- Existing interactions cover rules, groups, presets, risk settings, grid
+  pagination, charts and exports. Chart tests retain exact highlighted dates,
+  values, observations and acceleration windows.
+- Focused table-view and risk-settings checks were repeated after the final
+  header-format adjustments.
+- Ruff, Python compilation and updated Streamlit HTTP readiness succeeded.
+- The separate cloud browser could not reach the isolated local server
+  (connection refused), so pixel-level visual review and mobile rendering
+  remain unverified. Native chart controls and responsive styling are provided;
+  interaction checks use Streamlit's script/widget test runtime.
