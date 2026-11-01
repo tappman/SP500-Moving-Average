@@ -669,6 +669,7 @@ def resolve_universe(settings):
 
 
 def run_screen(config: ScreenConfig, settings):
+    progress = None
     try:
         if st.session_state.get("ma_error"):
             raise ValueError(st.session_state.ma_error)
@@ -721,6 +722,7 @@ def run_screen(config: ScreenConfig, settings):
         run = screen(universe, batch.frames, snapshot_config, end,
                      indicator_cache=st.session_state.setdefault("indicator_cache", {}),
                      risk_cache=st.session_state.setdefault("risk_cache", {}), progress=analyzed)
+        run.table = batch.annotate_results(run.table, snapshot_config.risk.benchmark if snapshot_config.risk.enabled else None)
         st.session_state.run = run
         st.session_state.run_batch = batch
         st.session_state.run_price_activity = {
@@ -740,12 +742,18 @@ def run_screen(config: ScreenConfig, settings):
             st.session_state.saved_screen_id = HistoryStore(home() / "research").save_screen(run)
         except (OSError, sqlite3.Error) as exc:
             st.warning(f"Screen completed, but its local history snapshot could not be saved: {exc}")
-        progress.empty()
         st.success(f"Screen complete: {run.summary()['passing']} of {len(run.table)} stocks matched on {end}.")
+        if batch.errors:
+            st.warning(f"Price-data issues for {len(batch.errors)} symbols. Saved prices were retained where "
+                       "available; an update may be incomplete. See Results → Data diagnostics. "
+                       "Exports include each stock's price_data_issue and last download time.")
         if not downloads:
             st.caption("Used saved prices. No price downloads were requested.")
     except (ValueError, RuntimeError, OSError, TimeoutError) as exc:
         st.error(f"Screen could not complete: {exc}")
+    finally:
+        if progress is not None:
+            progress.empty()
 
 
 def render_chart(run: ScreenRun, ticker: str, display_start: date, widget_prefix: str):

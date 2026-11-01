@@ -9,7 +9,7 @@ import pandas as pd
 from .calendar import sessions
 from .indicators import add_indicators
 from .models import ScreenConfig
-from .rules import RuleResult, combine, evaluate_rule
+from .rules import RuleResult, combine, evaluate_rule, primary_metrics
 from .risk import RiskReport, reports_for_stock
 
 
@@ -102,8 +102,7 @@ def screen(universe: pd.DataFrame, prices: dict[str, pd.DataFrame], config: Scre
             for metric, value in evaluation.metrics.items():
                 if isinstance(value, (int, float, bool)) or value is None:
                     row[f"{prefix}.{metric}"] = value
-        primary = next((evaluations[r.id].metrics for r in active_rules
-                        if r.ma != "PRICE" and evaluations[r.id].valid), {})
+        primary = primary_metrics(config, evaluations)
         for metric in ("normalized_slope", "pct_change", "r2", "longest_streak"):
             row[f"rank_{metric}"] = primary.get(metric, math.nan)
         row["data_notes"] = " | ".join(f"{r.name}: {evaluations[r.id].reason}" for r in active_rules

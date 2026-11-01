@@ -46,6 +46,7 @@ def main():
         refresh_recent=False,
     )
     run = screen(universe, data.frames, config, end)
+    run.table = data.annotate_results(run.table, config.risk.benchmark if config.risk.enabled else None)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     run.table.to_csv(args.output, index=False)
     print(f"{'SYNTHETIC DEMO' if args.demo else 'Yahoo Finance'}; screen date {end}; {run.summary()}")

@@ -2,10 +2,47 @@
 
 Original release verification date: October 31, 2026 (America/New_York). Python 3.12.14.
 
-**Latest status-position update (version 1.2.5): two focused UI tests and a layout check passed.**
-Most recent complete suite: version 1.2.3, **195 tests passed**.
+**Latest complete audit release (version 1.2.6): 212 tests passed in 184.47 seconds.**
+Ruff, Python compilation and launcher HTTP readiness also passed.
 
-The original release results below are retained as history. Risk/performance and UI update verification follow at the end.
+Earlier release results below are retained as history. The audit findings and
+remaining limits are described in [AUDIT_REPORT.md](AUDIT_REPORT.md).
+
+## Audit release — November 1, 2026
+
+Version 1.2.6 fixes incomplete cache replacement, missing adjustment-check
+overlap, mixed partial price rows, malformed cache metadata, inconsistent
+threshold comparisons, relationship-first default ranking and progress cleanup
+on errors. Results now carry stock and benchmark acquisition issues/timestamps.
+Backtest evidence and experiment plans record the executing application version.
+
+- Before fixes, the baseline suite passed **196 tests**, but the first ten new
+  audit regression cases all failed. Sixteen audit cases are now included.
+- Final full suite: **212 passed, one upstream warning, in 184.47 seconds**.
+  The warning comes from Streamlit's deprecated Pandas `DataFrame.drop(inplace=)`
+  call during a row-deletion test. That workflow passed; third-party source was
+  not modified. Command: `python -m pytest -q` with an external temporary folder.
+- Ruff and compilation of the application package and launchers passed.
+- Live Yahoo downloads returned 21 bars each for AAPL, MSFT and SPY for
+  January 2–31, 2024. Independent SMA5 and EMA5 calculations matched. Reopening
+  those files with downloads blocked made zero price-download calls. Fresh
+  Wikipedia membership retrieval returned 503 securities.
+- The synthetic 503-stock screen analyzed every history, including all three
+  default risk windows. Calculation took 6.586 seconds; cached loading took
+  2.478 seconds with zero repeat provider calls. All 503 had finite 252-return
+  beta. This check excludes networking and uses fictional returns.
+- The actual launcher server path using the existing virtual environment
+  returned HTTP 200 and `ok` from Streamlit's health endpoint, then stopped its
+  test process. No fresh installation or native browser opening is claimed by
+  this audit's smoke check.
+- Runtime: Python 3.12. The current direct versions are in
+  `constraints-tested.txt`; SciPy is now 1.18.1. Other listed direct versions
+  match the original table below.
+
+The audit did not repeat a full live 503-stock price acquisition. Native
+Windows/macOS double-click behavior and browser/mobile pixel layout remain
+unverified. See the audit report for data limitations and guidance on repairing
+previously truncated caches or rerunning affected historical rankings.
 
 ## Automated checks
 

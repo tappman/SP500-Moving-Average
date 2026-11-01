@@ -11,6 +11,7 @@ import zipfile
 import numpy as np
 import pandas as pd
 
+from . import __version__
 from .models import ScreenConfig
 from .snapshots import SnapshotStore
 from .studies import BacktestSettings, StudyEngine, backtest, frozen_plan, parameter_neighbors
@@ -34,7 +35,7 @@ def engine_slice(engine, config, start, end):
 
 
 def recorded_backtest(store, kind, engine, settings, risk=None, extra=None, progress=None):
-    plan = {"config": engine.config.to_dict(), "backtest": asdict(settings),
+    plan = {"app_version": __version__, "config": engine.config.to_dict(), "backtest": asdict(settings),
             "start": str(engine.start), "end": str(engine.end),
             "data_fingerprint": engine.fingerprint,
             "membership_digest": engine.membership.digest if engine.membership else None,

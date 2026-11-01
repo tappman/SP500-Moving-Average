@@ -258,13 +258,15 @@ def load_study(run, applied, home, start, end, mode, benchmark):
     provider = AliasedProvider(DemoProvider() if applied["demo"] else YFinanceProvider(),
                                config.data_settings.get("ticker_aliases", {}))
     progress = st.progress(0.0, text="Loading study prices…")
-    batch = PriceCache(Path(home) / "prices", provider).get_many(
-        tickers, earliest, end, refresh_recent=False, cache_only=applied["cache_only"],
-        progress=lambda done, total: progress.progress(.8 * done / max(1, total), text=f"Study prices: {done}/{total}"))
-    progress.progress(.85, text="Preparing causal indicators…")
-    engine = StudyEngine(batch.frames, universe, config, start, end, membership)
-    progress.empty()
-    return engine, batch
+    try:
+        batch = PriceCache(Path(home) / "prices", provider).get_many(
+            tickers, earliest, end, refresh_recent=False, cache_only=applied["cache_only"],
+            progress=lambda done, total: progress.progress(.8 * done / max(1, total), text=f"Study prices: {done}/{total}"))
+        progress.progress(.85, text="Preparing causal indicators…")
+        engine = StudyEngine(batch.frames, universe, config, start, end, membership)
+        return engine, batch
+    finally:
+        progress.empty()
 
 
 def research_views(home, run, forward_panel):

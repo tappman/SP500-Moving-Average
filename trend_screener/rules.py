@@ -16,13 +16,23 @@ COMPARISONS = {">": operator.gt, ">=": operator.ge, "<": operator.lt, "<=": oper
 
 
 def compare(value: float, op: str, threshold: float) -> bool:
-    # Inclusive boundaries tolerate floating-point roundoff (e.g. a mathematically exact 2%).
-    equal = math.isclose(value, threshold, rel_tol=1e-10, abs_tol=1e-10)
+    # Treat rounded nonzero boundaries consistently across all six operators.
+    # Zero remains exact so a genuinely tiny upward/downward slope keeps its direction.
+    equal = math.isclose(value, threshold, rel_tol=1e-10, abs_tol=0.0)
     if op == "==":
         return equal
     if op == "!=":
         return not equal
+    if equal:
+        return op in {">=", "<="}
     return COMPARISONS[op](value, threshold) or (equal and op in {">=", "<="})
+
+
+def primary_metrics(config, results):
+    candidates = [r for r in config.rules if r.enabled and r.ma != "PRICE"]
+    candidates.sort(key=lambda r: r.method in RELATION_METHODS)
+    return next((results[r.id].metrics for r in candidates if results[r.id].valid
+                 and "normalized_slope" in results[r.id].metrics), {})
 
 
 @dataclass

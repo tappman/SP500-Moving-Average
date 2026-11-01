@@ -13,12 +13,13 @@ import math
 import numpy as np
 import pandas as pd
 
+from . import __version__
 from .calendar import sessions
 from .indicators import add_indicators
 from .membership import MembershipHistory
 from .models import ScreenConfig
 from .risk import RiskReport, RiskSettings, numeric_prices, risk_report
-from .rules import combine, evaluate_rule
+from .rules import combine, evaluate_rule, primary_metrics
 
 RANKINGS = {
     "rank_normalized_slope": "Normalized MA slope",
@@ -89,7 +90,7 @@ class StudyEngine:
             # A tradable close is required even for an independently decidable OR rule.
             valid_close = not past.empty and pd.notna(numeric_prices(past.adj_close).iloc[-1])
             state = "INSUFFICIENT" if result is None or not valid_close else ("PASS" if result else "FAIL")
-            primary = next((results[r.id].metrics for r in rules if r.ma != "PRICE" and results[r.id].valid), {})
+            primary = primary_metrics(self.config, results)
             rows.append({**company, "signal_date": str(day.date()), "status": state,
                          "rules_passed": sum(e.passed for e in results.values()),
                          "return_20d_pct": float(past.return_20d.iloc[-1] * 100) if not past.empty else np.nan,
@@ -368,7 +369,7 @@ def backtest(engine: StudyEngine, settings: BacktestSettings, risk: RiskSettings
     report = risk_report(curve.equity, benchmark, len(curve) - 1, risk)
     return BacktestResult(curve, pd.DataFrame(trades), pd.DataFrame(orders), pd.DataFrame(diagnostic),
                           report, settings, notes,
-                          {"config": engine.config.to_dict(), "risk_settings": asdict(risk),
+                          {"app_version": __version__, "config": engine.config.to_dict(), "risk_settings": asdict(risk),
                            "data_fingerprint": engine.fingerprint, "start": str(engine.start), "end": str(engine.end),
                            "membership_source": engine.membership.source if engine.membership else "Fixed applied universe",
                            "membership_digest": engine.membership.digest if engine.membership else None})

@@ -102,7 +102,7 @@ For “MA20 increased on at least 8 of the last 10 days,” choose **Positive tr
 | Research lab | Multi-date cohort/control comparisons, cost-aware portfolio simulation, fixed parameter neighbors, chronological slices, portable frozen holdouts and trial ledger |
 | Portfolio concentration | Equal/custom weights, cash, sector exposure, effective holdings, stock correlations, variance contributions and hypothetical basket risk |
 
-Grid sorting supports normalized slope, MA change, R-squared, longest rising streak or recent stock return. Select the ranking rule so comparisons use the same window. The table's rank_* convenience columns use the first valid enabled non-price rule; each rule also has its own detailed columns.
+Grid sorting supports normalized slope, MA change, R-squared, longest rising streak or recent stock return. Select the ranking rule so comparisons use the same window. The table's rank_* convenience columns prefer the first valid enabled trend rule with slope metrics; relationship rules are only a fallback when no such trend rule is available. Each rule also has its own detailed columns.
 
 Edits remain drafts until **Run Screen**. Old results keep their applied configuration, and a banner indicates pending changes. A failed run displays its error and retains the last completed screen.
 
@@ -279,7 +279,7 @@ All windows count **NYSE sessions**, not calendar days. The calendar accounts fo
 
 A positive regression slope describes overall direction and does **not** imply uninterrupted daily increases. A recent crossover can have reversed since it happened; add a current-position rule to require the lines still to be in that order.
 
-Maximum MA decline is 100 × max(1 − MA/cumulative_max(MA)) within the window, a nonnegative peak-to-trough magnitude. It is not the largest one-day loss. Longest streak counts transitions. Inclusive/equality comparisons tolerate floating-point roundoff with relative/absolute tolerance 1e-10; strict inequalities remain strict.
+Maximum MA decline is 100 × max(1 − MA/cumulative_max(MA)) within the window, a nonnegative peak-to-trough magnitude. It is not the largest one-day loss. Longest streak counts transitions. Comparisons use relative tolerance 1e-10 at nonzero boundaries, consistently across all six operators: a computed 2.0000000000000018% is equal to 2%, passes >=/<=, and fails strict >/< at that boundary. There is no absolute tolerance around zero, so genuinely tiny positive/negative slopes retain their direction.
 
 ## Prices and returns
 
@@ -330,6 +330,28 @@ If overlapping close or adjusted-close values have been revised, the full cached
 
 An explicitly requested full-history refresh already covers that span and does
 not issue another identical full download simply because revised prices are found.
+
+Full-history replacements must retain every previously usable saved price row.
+An incomplete replacement is rejected while saved data and its last successful
+update timestamp remain available. If a response has no usable overlap with
+saved adjusted prices, the loader revalidates the whole span before merging
+potentially different adjustment vintages. Partial updates replace complete
+rows, not individual missing fields from different downloads. Malformed cache
+metadata is revalidated per ticker without stopping other stocks or shrinking
+usable saved history to a shorter requested window.
+
+Price-data problems now appear as a warning after a run. CSV/Excel/snapshot
+results include `price_data_issue` and `last_price_download_utc` for each stock,
+plus `benchmark_data_issue` and `benchmark_last_download_utc` when risk analytics
+are enabled, so retained saved data is identifiable when an update fails. If an older release's
+incomplete refresh already shortened a ticker's cache, use **Full price history**
+for that affected ticker to download the missing older history again.
+
+See [AUDIT_REPORT.md](AUDIT_REPORT.md) for the version 1.2.6 findings, fixes,
+executed checks and remaining verification limits. Re-run older backtests that
+used default slope ranking with relationship-first presets: those rankings were
+corrected in this version. Saved research inputs do not freeze the software;
+backtest evidence and new experiment records include the executing app version.
 
 Cache and user presets live in **.screener/** beside the source project. Keep that folder to preserve them. Set **SCREENER_HOME** to another writable directory if desired. The five source example JSON files are in **presets/**.
 
