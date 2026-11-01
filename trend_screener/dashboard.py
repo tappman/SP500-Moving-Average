@@ -1206,7 +1206,6 @@ def main():
             return
     config = st.session_state.draft
     header_slot = st.empty()
-    status_slot = st.container(key="screen_status")
     settings = settings_panel(config)
     with st.container(border=True, key="run_toolbar"):
         left, update, right = st.columns([1, 1.3, 2.7])
@@ -1219,6 +1218,8 @@ def main():
         right.markdown('<p class="lab-toolbar-title">Your screen, ready when you are.</p>'
                        '<p class="lab-toolbar-copy">Run Screen reuses saved prices. '
                        'Update prices &amp; run explicitly refreshes them.</p>', unsafe_allow_html=True)
+    # Keep screening progress below its controls and clear of Streamlit's top chrome.
+    status_slot = st.container(key="screen_status")
     build, results, selected, explorer, performance, grid, presets, research, history = st.tabs(
         ["Build screen", "Results", "Selected stocks", "Stock explorer", "Risk & performance",
          "Chart grid", "Saved presets", "Historical research", "Screen history"])
