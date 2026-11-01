@@ -2,7 +2,7 @@
 
 Original release verification date: October 31, 2026 (America/New_York). Python 3.12.14.
 
-**Latest rule-help/cache update (version 1.2.2): 184 tests passed.**
+**Latest combined-builder/stock-groups update (version 1.2.3): 195 tests passed.**
 
 The original release results below are retained as history. Risk/performance and UI update verification follow at the end.
 
@@ -302,3 +302,56 @@ verify exact call counts and ranges; no fresh live Yahoo download was claimed.
 The S&P 500 membership list has a separate daily cache and is distinct from
 price downloads. Native browser pixel layout remains unverified; the actual
 Streamlit widget/script runtime, table configuration and chart creation are tested.
+
+## Combined MA builder and stock groups — November 1, 2026
+
+Version 1.2.3 places MA rows and their conditions together in **Moving averages
+& trend rules**, followed by **Risk settings**, then optional **Relationships**.
+New MA rows receive an editable trend condition. Disabling/removing an MA pauses
+dependent conditions, including either side of relationships, and preserves their
+parameters. Re-enabling/re-adding it resumes only automatically paused conditions;
+manual disabling remains intact. A paused rule can also be reassigned to an
+enabled MA. This state is saved in JSON without weakening engine validation.
+
+Stable hidden MA row identities keep references correct when rows are edited,
+deleted and added together. Rule references, label tokens and widget state update
+on MA changes. Headers show the actual series and method, while rule identifiers
+remain stable for exports and historical records. Preset MAs that have no trend
+condition keep their existing behavior until explicitly edited/added.
+
+The results table now uses **Select** checkboxes for additive stock selection.
+A separate opt-in preview controls the single chart without replacing that
+selection. **Selected stocks** provides persistent ticker selection, named groups,
+CSV/ticker exports and a button to prepare a custom screening universe. Chart
+grid can display current results for selected stocks, including nonmatches.
+Tickers outside the applied universe remain selected with unavailable metrics;
+selecting/loading a group does not download their prices automatically.
+
+### Executed verification
+
+- Complete final suite: **195 tests passed in 162.29 seconds**. Ruff and Python
+  compilation passed. One upstream Streamlit/Pandas deprecation warning appeared
+  during a data-editor row deletion; the interaction and resulting calculations
+  passed. No third-party dependency source was modified.
+- **11 new regression cases** cover dependent-rule pause/resume, relationship
+  dependencies, preserved manual disabling and JSON state, complete-token name
+  replacement, table-based MA disabling/re-enabling, simultaneous type/period
+  changes and additions, deletion plus another row edit/addition in the same
+  event, MA dropdown/name synchronization, combined tab order, paused-rule
+  reassignment, ticker-based additive selection, local named-group persistence,
+  invalid save preservation and group loading/deletion behavior.
+- The interaction tests send serialized table-edit events through Streamlit's
+  widget runtime, exercising actual edit processing and callbacks. They check
+  successive stock checkbox selections, a different chart preview, table-view
+  changes, saving/loading a group, selected-stock grid rendering, and screening
+  that group while retaining selection.
+- A fresh AppTest session reloads saved selected tickers/groups with both Yahoo
+  and demo provider download methods blocked. No applied screen or download is
+  needed to reopen the selection. Existing price-cache tests remain passing.
+- Updated Streamlit readiness returned **HTTP 200**, body `ok`; the smoke-test
+  process was stopped afterward.
+
+No new live Yahoo download or native browser pixel review was performed for this
+update. Physical table clicks/sorting and platform dialogs remain unverified in
+a browser; serialized widget edits, resulting table values, persistent storage,
+Plotly creation and calculation workflows were verified in the local runtime.

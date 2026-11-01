@@ -58,11 +58,11 @@ Installation needs Internet access. Once installed, **Synthetic demo (offline)**
 ## First screen: MA20 rising over 10 observations
 
 1. In the sidebar choose **Live Yahoo Finance** and **S&P 500 (current constituents)**. For an immediate offline trial, choose **Synthetic demo (offline)**.
-2. In **Build screen**, add/edit MA rows. Each has type, period, enabled status and chart visibility. SMA7, SMA37, EMA63 and SMA300 are valid examples. There is no preset-period or rule-count restriction.
-3. Keep SMA20 enabled. Open **Build screen → Trend rules** and disable or remove the two other example rules.
-4. Expand the MA20 rule in **Trend rules**. Choose **Regression: normalized slope**, **10 observations**, comparison **>**, threshold **0**.
+2. In **Build screen → Moving averages & trend rules**, add/edit MA rows. Each has type, period, enabled status and chart visibility. SMA7, SMA37, EMA63 and SMA300 are valid examples. Newly added MAs receive an editable rising-slope condition underneath them. There is no preset-period or rule-count restriction.
+3. Keep SMA20 enabled. In the same combined tab, disable the two other MAs or disable/remove their individual conditions.
+4. Expand the SMA20 rule below its MA heading. Choose **Regression: normalized slope**, **10 observations**, comparison **>**, threshold **0**.
 5. Click **Run Screen**, then open **Results**.
-6. Select a result row to open its chart below the table, or use **Stock explorer**. Select a rule to highlight. The shaded segment, dashed regression fit and information panel explain exactly why it passed.
+6. Tick **Select** beside result stocks to collect several at once. To inspect one, enable **Preview a stock below the table** and choose its ticker, or use **Stock explorer**. Select a rule to highlight. The shaded segment, dashed regression fit and information panel explain exactly why it passed. Previewing does not change your stock collection.
 7. Change a threshold and run again. Loaded prices and unchanged indicators are reused.
 
 Each trend-rule control has a help tooltip. The selected method also shows its
@@ -79,11 +79,12 @@ For “MA20 increased on at least 8 of the last 10 days,” choose **Positive tr
 | Area | Controls and behavior |
 | --- | --- |
 | Data settings | Current S&P 500, sector, custom tickers, one stock, or ^GSPC benchmark; 3/6 months, 1/2/3/5/10 years, custom dates; latest or historical session; MA price basis; simple/log returns |
-| MA builder | Add/delete rows, arbitrary positive integer periods, SMA/EMA, enabled/chart switches |
+| MA builder + trend rules | Combined tab; add/delete rows, arbitrary SMA/EMA periods, automatic new conditions, dependent-rule pausing/resuming and synchronized names |
 | Trend rules | Independent MA, method, lookback, operator, threshold, enabled status; duplicate/remove controls |
 | Boolean groups | Root AND/OR and nested AND/OR groups; configurable parents; cycles rejected; empty groups ignored |
 | Relationships | Any MA pair or price/MA comparison; bullish/bearish alignment helper; recent crossovers; widening/narrowing absolute separation |
 | Results | Sortable/selectable table, visible-column controls, per-rule metrics, counts, diagnostics, sector breadth and comparisons |
+| Selected stocks | Additive row checkboxes, persistent ticker selection, named groups, selected-result CSV, group tickers, group screening and selected-stock chart grid |
 | Stock explorer | Interactive Plotly hover/zoom/legend, short/long/custom MA views, exact analyzed segments, fitted trendlines and calculation audit |
 | Chart grid | 4/8/12/20 charts per page, 1–4 columns, rule-specific ranking/highlights; only one requested page is drawn |
 | Presets | Five editable examples; save/load/rename/delete local presets; import/export JSON including data settings |
@@ -99,9 +100,49 @@ Edits remain drafts until **Run Screen**. Old results keep their applied configu
 
 ### Workspace layout
 
-The builder has four focused tabs: **Moving averages**, **Trend rules**,
-**Relationships**, and **Risk settings**. Universe and date controls stay in the
-sidebar, and **Run Screen** stays above the workspace.
+The builder has three tabs in order: **Moving averages & trend rules**,
+**Risk settings**, then **Relationships**. Each MA has its conditions directly
+below the shared MA table, with an **Add condition** button for additional
+independent conditions. Universe and date controls stay in the sidebar, and
+**Run Screen** stays above the workspace.
+
+Disabling or removing an MA automatically pauses its dependent conditions,
+including relationships referencing that line. Re-enabling/re-adding the MA
+resumes only conditions that were paused automatically. Conditions you disabled
+manually stay disabled. You can also reassign a paused condition to an enabled
+MA. Saved JSON preserves the pause state. Hiding a line with **Show on charts**
+only changes the chart; it does not disable a condition.
+
+Changing an MA type/period updates rule references, name tokens and selector
+values together. Stable row identities prevent deleting one row from attaching
+another row's rules to the wrong MA. Rule headers always show the actual current
+series and method. Imported/example MAs used only for charting or relationships
+do not acquire extra trend conditions unless you add them.
+
+**Relationships** is optional: it compares two lines, such as SMA5 above SMA20,
+or a recent crossover from below to above. It does not measure one line's upward
+slope. Leave it empty if you only want rising-line filters.
+
+### Collecting and separating stocks
+
+In **Results**, tick the **Select** checkbox on any number of rows. No Ctrl/Shift
+selection is required. Previewing a chart, sorting, changing table columns/views,
+or running another screen does not replace the ticker selection. **Select all
+shown** adds the visible population; **Clear stock selection** clears it.
+
+Open **Selected stocks** to remove individual tickers, save/replace named groups,
+load/delete groups, download selected results as CSV or export a group's tickers.
+**Use selected stocks as the screening universe** prepares a custom-ticker draft;
+click Run Screen to apply it. In **Chart grid → Grid stocks**, choose **Selected
+stocks** to compare selected stocks present in the current applied screen,
+including nonmatches. Other selected tickers remain in the group with blank
+current metrics until screened; their data is not downloaded automatically.
+
+Selections/groups persist locally under `.screener/collections/` or
+`SCREENER_HOME/collections/` and are excluded from Git. They reopen without a
+new screen or provider request. Keep that directory when moving installations.
+Named groups and chart focus are separate: switching the preview never removes
+earlier selected stocks.
 
 Results open in a compact **Overview**. Switch to **Trend details** or **Risk
 comparison** for more metrics, or use **Custom**. **Choose visible columns**
@@ -500,6 +541,7 @@ The independently specified datasets in **examples/synthetic_scenarios.json** in
 | app.py, run_dashboard.py | Dashboard launchers |
 | dashboard.py | Streamlit controls, state, results and downloads |
 | models.py | Validated MA/rule/group configuration and JSON |
+| builder.py, collections.py | MA/rule synchronization, preserved pause intent, named stock groups and ticker-based multi-selection |
 | universe.py | Current membership, metadata and symbol normalization |
 | providers.py, cache.py, calendar.py | Data abstraction, aliases, validation, Parquet cache and NYSE sessions |
 | indicators.py, metrics.py | Causal MAs/returns and trend mathematics |

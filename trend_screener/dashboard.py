@@ -13,6 +13,8 @@ import pandas as pd
 import streamlit as st
 
 from .cache import PriceCache
+from .builder import rename_references, sync_averages
+from .collections import StockGroups, apply_selection_edits, selection_signature
 from .calendar import history_start, latest_completed_session
 from .charts import information_panel, price_chart
 from .demo import DemoProvider, demo_universe
@@ -249,13 +251,21 @@ def settings_panel(config: ScreenConfig) -> dict:
 
 def moving_average_builder(config: ScreenConfig) -> None:
     st.subheader("Moving average builder")
-    st.caption("Add or remove rows. Any positive integer period is allowed. Enabled MAs can be used in rules.")
+    st.caption("Add a row to create a moving average and its editable upward-slope rule below. "
+               "Disabling/removing a line pauses dependent rules; enabling it resumes those rules. "
+               "Disable a condition separately if you want the line only on charts.")
     base_key = key("ma_base")
     if base_key not in st.session_state:
         st.session_state[base_key] = pd.DataFrame([asdict(m) for m in config.moving_averages],
                                                  columns=["kind", "period", "enabled", "show"])
     base = st.session_state[base_key].copy()
     base["kind"] = base.kind.map(lambda value: MA_TYPES.get(value, value))
+    if "_row_id" not in base:
+        base["_row_id"] = [uid("ma") for _ in range(len(base))]
+        st.session_state[base_key] = base.copy()
+    revision_key = key("ma_revision")
+    revision = st.session_state.get(revision_key, 0)
+    editor_key = key("ma_editor") + (f"_{revision}" if revision else "")
     edited = st.data_editor(
         base, num_rows="dynamic", hide_index=True, width="stretch",
         column_config={
@@ -272,7 +282,8 @@ def moving_average_builder(config: ScreenConfig) -> None:
             "show": st.column_config.CheckboxColumn("Show on charts", default=True,
                                                      help="Display this line on charts. Hiding a line does not "
                                                           "remove its enabled screening rules."),
-        }, key=key("ma_editor"),
+            "_row_id": None,
+        }, column_order=["kind", "period", "enabled", "show"], key=editor_key,
     )
     averages = []
     try:
@@ -286,14 +297,30 @@ def moving_average_builder(config: ScreenConfig) -> None:
                                True if pd.isna(row["show"]) else bool(row["show"]))
             ma.validate()
             averages.append(ma)
-        old = config.moving_averages
-        if len(old) == len(averages):
-            mapping = {a.key: b.key for a, b in zip(old, averages) if a.key != b.key}
-            for rule in config.rules:
-                rule.ma = mapping.get(rule.ma, rule.ma)
-                rule.other = mapping.get(rule.other, rule.other)
-        config.moving_averages = averages
+        def row_key(row):
+            kind = next((code for code, label in MA_TYPES.items() if label == row["kind"]), row["kind"])
+            return f"{kind}{int(row['period'])}"
+        old_rows = {row["_row_id"]: row_key(row) for row in base.to_dict("records")}
+        mapping, added = {}, []
+        records = edited.to_dict("records")
+        for row, ma in zip(records, averages):
+            old_key = old_rows.get(row.get("_row_id"))
+            if old_key:
+                if old_key != ma.key:
+                    mapping[old_key] = ma.key
+            else:
+                row["_row_id"] = uid("ma")
+                added.append(ma.key)
+        previous = [asdict(m) for m in config.moving_averages]
+        changed = sync_averages(config, averages, mapping, added)
+        for rule in changed.values():
+            for field in ("ma", "other", "name", "enabled"):
+                st.session_state[key(f"rule_{rule.id}_{field}")] = getattr(rule, field)
         st.session_state["ma_error"] = ""
+        if previous != [asdict(m) for m in averages]:
+            st.session_state[base_key] = pd.DataFrame(records)
+            st.session_state[revision_key] = revision + 1
+            st.rerun()
     except (ValueError, TypeError, KeyError) as exc:
         st.session_state["ma_error"] = str(exc)
         st.error(str(exc))
@@ -345,31 +372,46 @@ def group_builder(config: ScreenConfig):
                 st.rerun()
 
 
+def change_rule_ma(rule, widget_key, field="ma"):
+    old = getattr(rule, field)
+    previous_ma, previous_other = rule.ma, rule.other
+    rename_references(rule, {old: st.session_state[widget_key]})
+    rule.ma = st.session_state[widget_key] if field == "ma" else previous_ma
+    rule.other = st.session_state[widget_key] if field == "other" else previous_other
+    st.session_state[key(f"rule_{rule.id}_name")] = rule.name
+
+
 def rule_editor(config: ScreenConfig, rule: Rule, relationships: bool = False):
     prefix = f"rule_{rule.id}_"
     options = [m.key for m in config.moving_averages if m.enabled]
     if relationships:
         options = ["PRICE", *options]
-    label = f"{'●' if rule.enabled else '○'} {rule.name} · {series_label(rule.ma)}"
+    label = f"{'●' if rule.enabled else '○'} {series_label(rule.ma)} · {METHODS[rule.method]}"
     with st.expander(label, expanded=len(config.rules) <= 1):
         top = st.columns([3, 1, 1, 1])
         rule.name = top[0].text_input("Rule name", rule.name, key=key(prefix + "name"), help=CONTROL_HELP["name"])
         rule.enabled = top[1].checkbox("Enabled", value=rule.enabled, key=key(prefix + "enabled"),
-                                       help=CONTROL_HELP["enabled"])
+                                       help=CONTROL_HELP["enabled"], disabled=rule.paused_by_ma)
+        if rule.paused_by_ma:
+            st.info("Paused because a referenced moving average is disabled or removed. "
+                    "Enable/add that MA above, or choose an enabled replacement below, to resume it. "
+                    "Its settings are preserved.")
         if top[2].button("Duplicate", key=key(prefix + "duplicate"), help=CONTROL_HELP["duplicate"]):
             config.rules.append(replace(rule, id=uid(), name=rule.name + " (copy)"))
             st.rerun()
         if top[3].button("Remove", key=key(prefix + "remove"), help=CONTROL_HELP["remove"]):
             config.rules = [r for r in config.rules if r.id != rule.id]
             st.rerun()
-        if not options or (relationships and len(options) < 2):
+        if not options and not rule.paused_by_ma:
             st.warning("Enable a moving average in the builder first.")
             return
         cols = st.columns([1, 2])
         # Keep invalid references visible until the user explicitly resolves them.
         ma_options = options if rule.ma in options else [rule.ma, *options]
         rule.ma = cols[0].selectbox("Series / MA", ma_options, index=ma_options.index(rule.ma),
-                                    key=key(prefix + "ma"), format_func=series_label, help=CONTROL_HELP["ma"])
+                                    key=key(prefix + "ma"), format_func=series_label, help=CONTROL_HELP["ma"],
+                                    disabled=not any(m.enabled for m in config.moving_averages), on_change=change_rule_ma,
+                                    args=(rule, key(prefix + "ma")))
         method_options = [m for m in METHODS if (m in RELATION_METHODS) == relationships]
         old_method = rule.method
         rule.method = cols[1].selectbox(
@@ -389,12 +431,16 @@ def rule_editor(config: ScreenConfig, rule: Rule, relationships: bool = False):
         st.caption("Example: " + example)
         if relationships:
             other_options = [m.key for m in config.moving_averages if m.enabled]
+            if rule.other not in other_options:
+                other_options = [rule.other, *other_options]
             if not other_options:
                 st.warning("Enable a comparison moving average first.")
                 return
             rule.other = st.selectbox("Compare with MA", other_options,
                                       index=default_option(other_options, rule.other), key=key(prefix + "other"),
-                                      format_func=series_label, help=CONTROL_HELP["other"])
+                                      format_func=series_label, help=CONTROL_HELP["other"],
+                                      disabled=not any(m.enabled for m in config.moving_averages),
+                                      on_change=change_rule_ma, args=(rule, key(prefix + "other"), "other"))
             st.caption("Difference = 100 × (left / right − 1). Positive means the left line is above the right. "
                        "Absolute separation uses the magnitude of this difference.")
         minimum = 2 if rule.method in REGRESSION_METHODS else 1
@@ -503,21 +549,31 @@ def rule_editor(config: ScreenConfig, rule: Rule, relationships: bool = False):
 
 
 def build_panel(config):
-    averages, trends, relationships, risk = st.tabs(
-        ["Moving averages", "Trend rules", "Relationships", "Risk settings"])
-    with averages:
+    trends, risk, relationships = st.tabs(
+        ["Moving averages & trend rules", "Risk settings", "Relationships"])
+    with trends:
         with st.container(border=True):
             moving_average_builder(config)
-    with trends:
         group_builder(config)
         st.divider()
         st.subheader("Trend detection rules")
         st.caption("Each rule has its own MA, method and lookback. A 10-observation regression uses 9 daily transitions.")
-        for rule in [r for r in config.rules if r.method not in RELATION_METHODS]:
-            rule_editor(config, rule)
-        if st.button("Add trend rule", key=key("add_trend")):
-            options = [m.key for m in config.moving_averages if m.enabled]
-            config.rules.append(Rule(name="New upward trend", ma=options[0] if options else "SMA20"))
+        for ma in config.moving_averages:
+            st.markdown(f"#### {series_label(ma.key)}" + (" · paused" if not ma.enabled else ""))
+            for rule in [r for r in config.rules if r.ma == ma.key and r.method not in RELATION_METHODS]:
+                rule_editor(config, rule)
+            if st.button(f"Add condition for {ma.key}", key=key(f"add_condition_{ma.key}"), disabled=not ma.enabled):
+                config.rules.append(Rule(name=f"{ma.key} slope positive", ma=ma.key))
+                st.rerun()
+        detached = [r for r in config.rules if r.ma not in {m.key for m in config.moving_averages}
+                    and r.method not in RELATION_METHODS]
+        if detached:
+            st.markdown("#### Paused conditions for removed moving averages")
+            for rule in detached:
+                rule_editor(config, rule)
+        options = [m.key for m in config.moving_averages if m.enabled]
+        if st.button("Add trend rule", key=key("add_trend"), disabled=not options):
+            config.rules.append(Rule(name=f"{options[0]} slope positive", ma=options[0]))
             st.rerun()
     with relationships:
         relationship_builder(config)
@@ -534,7 +590,10 @@ def build_panel(config):
 
 def relationship_builder(config):
     st.subheader("Moving average relationships")
-    st.caption("Build bullish/bearish alignments with multiple comparisons. Crossovers test any selected pair.")
+    st.caption("Optional comparisons between two lines, rather than the slope of one line. "
+               "For example, SMA5 > SMA20 means the short average is above the longer average. "
+               "A bullish crossover means it recently moved from below to above. "
+               "You can leave this section empty when you only want rising MA lines.")
     with st.expander("Quick alignment builder"):
         options = [m.key for m in sorted(config.moving_averages, key=lambda m: (m.period, m.kind)) if m.enabled]
         alignment = st.selectbox("Alignment direction", ["Bullish", "Bearish"], key=key("alignment_direction"))
@@ -729,6 +788,22 @@ def render_chart(run: ScreenRun, ticker: str, display_start: date, widget_prefix
                         key=widget_prefix + "_csv")
 
 
+def set_stock_selection(tickers, reset_table=True):
+    data = StockGroups(home() / "collections").change(selected=tickers)
+    st.session_state.selected_tickers = data["selected"]
+    if reset_table:
+        st.session_state.selection_epoch = st.session_state.get("selection_epoch", 0) + 1
+
+
+def result_selection_changed(widget_key, tickers):
+    edits = st.session_state[widget_key].get("edited_rows", {})
+    set_stock_selection(apply_selection_edits(st.session_state.get("selected_tickers", []), tickers, edits), False)
+
+
+def manager_selection_changed(widget_key):
+    set_stock_selection(st.session_state[widget_key])
+
+
 def results_panel(run: ScreenRun, display_start):
     st.subheader("Screening results")
     summary = run.summary()
@@ -799,20 +874,36 @@ def results_panel(run: ScreenRun, display_start):
         visible = ["ticker", "status"]
     if table.empty:
         st.info("No stocks matched. Inspect all stocks by turning off the matching-only toggle, or change the rules.")
-    event = st.dataframe(table[visible], hide_index=True, width="stretch", height=400,
+    scope = (st.session_state.run_id, view, matches_only, tuple(visible))
+    if st.session_state.get("selection_table_scope") != scope:
+        st.session_state.selection_epoch = st.session_state.get("selection_epoch", 0) + 1
+        st.session_state.selection_table_scope = scope
+    editor_key = f"results_table_{st.session_state.run_id}_{st.session_state.get('selection_epoch', 0)}"
+    shown = table[visible].copy()
+    shown.insert(0, "Select", table.ticker.isin(st.session_state.get("selected_tickers", [])))
+    st.data_editor(shown, hide_index=True, width="stretch", height=400, disabled=visible,
                           column_config={
+                              "Select": st.column_config.CheckboxColumn("Select", width="small",
+                                                                         help="Keep this stock in your selection; ticking another stock keeps earlier choices."),
                               **table_column_formats(),
                               **{
                               name: st.column_config.NumberColumn(table_column_label(name),
                                                                    help=risk_column_label(name), format="%.4f")
                               for name in visible if any(name == f"risk_{n}_{m}"
                                                         for n in run.config.risk.lookbacks for m in RISK_METRICS)}},
-                          selection_mode="single-row", on_select="rerun",
-                          key=f"results_table_{st.session_state.run_id}_{matches_only}")
-    st.caption("Select a row to open its detailed chart below. Column headers sort the table. "
-               "Rule metric columns use rule IDs; the configuration maps IDs to names.")
-    if event.selection.rows:
-        ticker = table.iloc[event.selection.rows[0]].ticker
+                          key=editor_key, on_change=result_selection_changed, args=(editor_key, table.ticker.tolist()))
+    st.caption("Tick Select for as many stocks as you want; each tick keeps previous choices. "
+               "Manage/export them in Selected stocks. Previewing a chart does not change your selection.")
+    cols = st.columns(3)
+    if cols[0].button("Select all shown", key="select_all_results", disabled=table.empty):
+        set_stock_selection([*st.session_state.get("selected_tickers", []), *table.ticker])
+        st.rerun()
+    if cols[1].button("Clear stock selection", key="clear_result_selection"):
+        set_stock_selection([])
+        st.rerun()
+    cols[2].metric("Selected stocks", len(st.session_state.get("selected_tickers", [])))
+    if not table.empty and st.toggle("Preview a stock below the table", key="result_preview"):
+        ticker = st.selectbox("Stock to preview", table.ticker.tolist(), key=f"result_preview_{st.session_state.run_id}")
         st.session_state.selected_ticker = ticker
         render_chart(run, ticker, display_start, f"row_chart_{st.session_state.run_id}_{ticker}")
     with st.expander("Sector breadth and statistical comparisons"):
@@ -857,8 +948,10 @@ def explorer_panel(run, display_start):
 
 def grid_panel(run, display_start):
     st.caption("Only the selected page is rendered. Ranking uses the chosen rule's own window.")
-    if run.passing.empty:
-        st.info("No matching stocks for the grid.")
+    population = st.radio("Grid stocks", ["Matching stocks", "Selected stocks"], horizontal=True, key="grid_population")
+    data = run.table[run.table.ticker.isin(st.session_state.get("selected_tickers", []))] if population == "Selected stocks" else run.passing
+    if data.empty:
+        st.info("No stocks from this group have results in the current screen.")
         return
     rules = [r for r in run.config.rules if r.enabled and r.ma != "PRICE"]
     if not rules:
@@ -884,19 +977,18 @@ def grid_panel(run, display_start):
     c = st.columns(3)
     size = c[0].selectbox("Charts per page", [4, 8, 12, 20], key="grid_size")
     per_row = c[1].selectbox("Charts per row", [1, 2, 3, 4], index=1, key="grid_columns")
-    pages = max(1, math.ceil(len(run.passing) / size))
+    pages = max(1, math.ceil(len(data) / size))
     page = int(c[2].number_input("Page", min_value=1, max_value=pages,
                                  value=1, step=1, key=f"grid_page_{pages}_{size}"))
     if not st.toggle("Render chart grid", value=False, key="grid_render"):
         st.info("Enable the grid to draw this page of interactive charts.")
         return
-    data = run.passing
     column = metrics[sort]
     if column in data:
         data = data.sort_values(column, ascending=sort in {"Lowest beta", "Lowest volatility", "Smallest drawdown"},
                                 na_position="last")
     subset = data.iloc[(page - 1) * size:page * size]
-    st.caption(f"Page {page} of {pages} · {len(run.passing)} matches")
+    st.caption(f"Page {page} of {pages} · {len(data)} stocks · {population}")
     rule = next(r for r in rules if r.id == chosen)
     for offset in range(0, len(subset), per_row):
         cols = st.columns(per_row)
@@ -905,6 +997,52 @@ def grid_panel(run, display_start):
                 show_figure(price_chart(run.frames[ticker], ticker, run.config, display_start,
                                          rule, run.evaluations[ticker][rule.id], height=370),
                             key=f"grid_{st.session_state.run_id}_{ticker}")
+
+
+def selected_stocks_panel(run):
+    st.subheader("Selected stocks & saved groups")
+    st.caption("Selections stay separate from chart previews and persist across screens and app restarts. "
+               "Save different named groups to keep stock lists apart.")
+    store = StockGroups(home() / "collections")
+    selected = st.session_state.get("selected_tickers", [])
+    choices = list(dict.fromkeys([*(run.table.ticker.tolist() if run is not None else []), *selected]))
+    manager_key = "selected_manager_" + selection_signature(selected)
+    st.multiselect("Selected tickers", choices, default=selected, key=manager_key,
+                    on_change=manager_selection_changed, args=(manager_key,))
+    if selected:
+        table = pd.DataFrame({"ticker": selected})
+        if run is not None:
+            table = table.merge(run.table, on="ticker", how="left", sort=False)
+            st.caption("Metrics use the current applied screen. Stocks outside its universe remain selected; "
+                       "their metrics are blank until you screen that group.")
+        st.dataframe(table, hide_index=True, width="stretch")
+        st.download_button("Download selected stocks CSV", table.to_csv(index=False),
+                           file_name="selected_stocks.csv", mime="text/csv", key="selected_csv")
+        st.code(", ".join(selected), language=None)
+        if st.button("Use selected stocks as the screening universe", key="screen_selection"):
+            draft = ScreenConfig.from_dict(st.session_state.draft.to_dict())
+            draft.data_settings.update(universe_mode="Custom tickers", tickers=", ".join(selected))
+            load_config(draft)
+            st.rerun()
+    name = st.text_input("Stock group name", key="stock_group_name", placeholder="e.g. Smooth trends")
+    if st.button("Save / replace stock group", key="save_stock_group", disabled=not selected):
+        try:
+            store.change(selected=selected, save_name=name)
+            st.success(f"Saved group: {name.strip()}")
+        except ValueError as exc:
+            st.error(str(exc))
+    groups = store.read()["groups"]
+    if groups:
+        chosen = st.selectbox("Saved stock group", list(groups), key="stock_group_choice")
+        left, right = st.columns(2)
+        if left.button("Load stock group", key="load_stock_group"):
+            set_stock_selection(groups[chosen])
+            st.rerun()
+        if right.button("Delete stock group", key="delete_stock_group"):
+            store.change(delete_name=chosen)
+            st.rerun()
+        st.download_button("Download group tickers", "\n".join(groups[chosen]),
+                           file_name="stock_group.txt", mime="text/plain", key="stock_group_download")
 
 
 def presets_panel(config):
@@ -996,6 +1134,12 @@ def main():
     if "draft" not in st.session_state:
         st.session_state.draft = builtins()[0]
         st.session_state.editor_version = 0
+    if "selected_tickers" not in st.session_state:
+        try:
+            st.session_state.selected_tickers = StockGroups(home() / "collections").read()["selected"]
+        except (ValueError, KeyError, OSError) as exc:
+            st.error(f"Cannot read saved stock groups: {exc}")
+            return
     config = st.session_state.draft
     header_slot = st.empty()
     settings = settings_panel(config)
@@ -1010,8 +1154,8 @@ def main():
         right.markdown('<p class="lab-toolbar-title">Your screen, ready when you are.</p>'
                        '<p class="lab-toolbar-copy">Run Screen reuses saved prices. '
                        'Update prices &amp; run explicitly refreshes them.</p>', unsafe_allow_html=True)
-    build, results, explorer, performance, grid, presets, research, history = st.tabs(
-        ["Build screen", "Results", "Stock explorer", "Risk & performance",
+    build, results, selected, explorer, performance, grid, presets, research, history = st.tabs(
+        ["Build screen", "Results", "Selected stocks", "Stock explorer", "Risk & performance",
          "Chart grid", "Saved presets", "Historical research", "Screen history"])
     with build:
         build_panel(config)
@@ -1027,6 +1171,8 @@ def main():
         history_panel(home())
     with research:
         research_lab(run, applied, home(), research_panel)
+    with selected:
+        selected_stocks_panel(run)
     with header_slot.container():
         workspace_header(run, demo=applied["demo"])
         context_strip([

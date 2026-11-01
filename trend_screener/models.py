@@ -85,6 +85,7 @@ class Rule:
     threshold: float = 0.0
     enabled: bool = True
     group: str = "root"
+    paused_by_ma: bool = False
     other: str = "SMA50"
     min_r2: float | None = None
     min_positive_pct: float | None = None
@@ -188,6 +189,8 @@ class ScreenConfig:
             ids.add(rule.id)
             if not isinstance(rule.enabled, bool):
                 raise ValueError("Rule enabled must be a boolean")
+            if not isinstance(rule.paused_by_ma, bool) or (rule.paused_by_ma and rule.enabled):
+                raise ValueError("A rule paused by a moving average must be disabled")
             if rule.group not in groups:
                 raise ValueError(f"Unknown group for {rule.name}")
             if rule.method not in METHODS or rule.operator not in OPERATORS:
