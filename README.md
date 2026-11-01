@@ -1,1 +1,191 @@
-# sp500
+# MA Trend Lab — S&P 500 Moving Average Screener
+
+A complete Python/Streamlit research application for finding stocks whose moving-average lines are rising over your chosen trading-day windows. Define arbitrary SMA/EMA periods, combine independent rules, and inspect the actual values and fitted trendlines that produced each result.
+
+## Start the dashboard
+
+Install **Python 3.11 or newer**, extract this project, and open a terminal in the extracted **sp500-trend-screener** folder.
+
+**macOS / Linux**
+
+~~~bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m streamlit run app.py
+~~~
+
+**Windows Command Prompt**
+
+~~~bat
+py -3 -m venv .venv
+.venv\Scripts\activate
+python -m pip install -r requirements.txt
+python -m streamlit run app.py
+~~~
+
+**Windows PowerShell** can use the virtual environment directly:
+
+~~~powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m streamlit run app.py
+~~~
+
+Streamlit prints a local browser address, normally http://localhost:8501. Keep the terminal open. Stop with **Ctrl+C**. On subsequent launches, activate the same environment and run:
+
+~~~bash
+python run_dashboard.py
+~~~
+
+For an occupied port, use:
+
+~~~bash
+python run_dashboard.py --server.port 8502
+~~~
+
+Installation needs Internet access. Once installed, **Synthetic demo (offline)** runs the entire dashboard without external data or API keys. Live data additionally needs Yahoo Finance and a constituent source. The optional constraints-tested.txt records exact direct dependencies used in the Python 3.12 verification environment; requirements.txt allows compatible versions for other supported Python releases.
+
+## First screen: MA20 rising over 10 observations
+
+1. In the sidebar choose **Live Yahoo Finance** and **S&P 500 (current constituents)**. For an immediate offline trial, choose **Synthetic demo (offline)**.
+2. In **Build screen**, add/edit MA rows. Each has type, period, enabled status and chart visibility. SMA7, SMA37, EMA63 and SMA300 are valid examples. There is no preset-period or rule-count restriction.
+3. Keep SMA20 enabled. Disable or remove the two other example rules.
+4. Expand the MA20 rule. Choose **Regression: normalized slope**, **10 observations**, comparison **>**, threshold **0**.
+5. Click **Run Screen**, then open **Results**.
+6. Select a result row to open its chart below the table, or use **Stock explorer**. Select a rule to highlight. The shaded segment, dashed regression fit and information panel explain exactly why it passed.
+7. Change a threshold and run again. Loaded prices and unchanged indicators are reused.
+
+For “MA20 increased on at least 8 of the last 10 days,” choose **Positive transition count**, lookback **10**, comparison **>=**, threshold **8**. This requires **11 MA observations**. Combine it with a positive-slope rule, or use the regression rule's **Also require mostly rising** control.
+
+## Dashboard features
+
+| Area | Controls and behavior |
+| --- | --- |
+| Data settings | Current S&P 500, sector, custom tickers, one stock, or ^GSPC benchmark; 3/6 months, 1/2/3/5/10 years, custom dates; latest or historical session; MA price basis; simple/log returns |
+| MA builder | Add/delete rows, arbitrary positive integer periods, SMA/EMA, enabled/chart switches |
+| Trend rules | Independent MA, method, lookback, operator, threshold, enabled status; duplicate/remove controls |
+| Boolean groups | Root AND/OR and nested AND/OR groups; configurable parents; cycles rejected; empty groups ignored |
+| Relationships | Any MA pair or price/MA comparison; bullish/bearish alignment helper; recent crossovers; widening/narrowing absolute separation |
+| Results | Sortable/selectable table, visible-column controls, per-rule metrics, counts, diagnostics, sector breadth and comparisons |
+| Stock explorer | Interactive Plotly hover/zoom/legend, short/long/custom MA views, exact analyzed segments, fitted trendlines and calculation audit |
+| Chart grid | 4/8/12/20 charts per page, 1–4 columns, rule-specific ranking/highlights; only one requested page is drawn |
+| Presets | Five editable examples; save/load/rename/delete local presets; import/export JSON including data settings |
+| Downloads | Displayed/all results CSV, Excel, per-stock OHLCV/return/MA CSV, all-stock historical ZIP, JSON configuration |
+| Historical research | Causal screens ending at the selected session; separate opt-in 5/20/60-session forward outcomes |
+
+Grid sorting supports normalized slope, MA change, R-squared, longest rising streak or recent stock return. Select the ranking rule so comparisons use the same window. The table's rank_* convenience columns use the first valid enabled non-price rule; each rule also has its own detailed columns.
+
+Edits remain drafts until **Run Screen**. Old results keep their applied configuration, and a banner indicates pending changes. A failed run displays its error and retains the last completed screen.
+
+## Mathematical definitions
+
+All windows count **NYSE sessions**, not calendar days. The calendar accounts for holidays, weekends, daylight saving and early closes. Latest mode uses a 15-minute publication buffer after the official close.
+
+| Method | Exact definition |
+| --- | --- |
+| Net increase | MA[t] > MA[t−X], plus the selected percentage comparison; X transitions, X+1 observations |
+| Percentage change | 100 × (MA[t]/MA[t−X] − 1), with any comparison; intermediate dips allowed |
+| Strictly increasing | Every one of X daily differences is >0; flat or negative changes fail; true=1 |
+| Regression | Fit y = intercept + slope × x, with x=0..X−1, to exactly X MA observations |
+| Normalized slope | 100 × slope / mean(MA window), in percent per session; raw slope remains price units/session |
+| R-squared | Squared correlation between session index and MA values; undefined for constant lines |
+| Mostly increasing | Count or percentage of strictly positive differences over X transitions |
+| Percentage acceleration | Latest X-transition MA percentage change minus the preceding X-transition change; boundary shared, 2X+1 observations |
+| Slope acceleration | Current normalized slope minus previous normalized slope; consecutive non-overlapping X-observation windows, 2X observations |
+| Turning up | Current normalized slope > minimum, previous slope evaluated L sessions ago <0 or optionally <=0; optional C positive evaluations ending today |
+| Smoothness | Positive/downward/flat counts, positive percentage, R², maximum MA peak-to-trough decline and longest rising streak |
+| Relative position | 100 × (left/right − 1); left is price or MA, right an MA; >0 means left is above |
+| Bullish crossover | left−right changes from <=0 to >0 within X transitions; bearish reverses the inequalities |
+| Separation change | Absolute relative-position percentage today minus its value X transitions ago |
+
+**Units:** 1 means 1%, and 0.01 normalized slope means 0.01% per session. Acceleration differences use percentage points, not percentage growth of a slope. Optional positive-rate switches distinguish upward acceleration from falling more slowly. Turning-up thresholds are minimum normalized slopes; its comparison applies to the turning-up boolean against 1. Confirmation count must not exceed reversal lag.
+
+A positive regression slope describes overall direction and does **not** imply uninterrupted daily increases. A recent crossover can have reversed since it happened; add a current-position rule to require the lines still to be in that order.
+
+Maximum MA decline is 100 × max(1 − MA/cumulative_max(MA)) within the window, a nonnegative peak-to-trough magnitude. It is not the largest one-day loss. Longest streak counts transitions. Inclusive/equality comparisons tolerate floating-point roundoff with relative/absolute tolerance 1e-10; strict inequalities remain strict.
+
+## Prices and returns
+
+The default provider explicitly requests **auto_adjust=False, back_adjust=False**. It preserves provider Open/High/Low/Close/Volume and stores **Adj Close separately**. Yahoo's raw OHLC can already reflect splits; “raw” means the provider fields with auto adjustment disabled, not an immutable original tape.
+
+MAs, price/MA comparisons and charts share the selected price basis. **Returns always use adjusted close**:
+
+- Simple return: AdjClose[t]/AdjClose[t−X] − 1.
+- Log return: ln(AdjClose[t]/AdjClose[t−X]).
+- Historical CSV return columns are fractions. Results-table returns are percentages.
+- If an alternate source supplies auto-adjusted bars, the normalizer explicitly preserves its close as adjusted close and leaves unavailable raw OHLC missing. It never silently substitutes Close for Adj Close.
+
+SMA requires a full N-session window. EMA uses span=N, adjust=False, min_periods=N, seeded at the first valid observation. Warm-up covers the longest MA and all rule dependencies, including acceleration and reversal windows, with **5×period burn-in for EMA**. Finite EMA burn-in approximates an infinite-history EMA; a different history start can produce small seed differences.
+
+Daily bars are aligned to expected NYSE sessions. Gaps remain NaN; prices are never forward-filled. SMA windows crossing gaps are unavailable. EMA resets after each gap. A missing latest session never substitutes an older close. IPOs and unavailable tickers are explicit diagnostics.
+
+## Cache, membership and symbol changes
+
+The local Parquet cache downloads absent ranges, checks overlapping bars, reuses successful history across restarts and refreshes recent bars after six hours in latest mode. **Retry failed / missing prices** repairs incomplete tickers without reloading successful histories. Full refresh and cached-prices-only mode are separate options.
+
+If overlapping close or adjusted-close values have been revised, the full cached span is refreshed to avoid mixing adjustment vintages. Failed refreshes retain old cache and report errors. Writes are atomic and protected by an inter-process writer lock. Requests are batched and retried; a circuit breaker stops new downloads after two entirely failed batches.
+
+Cache and user presets live in **.screener/** beside the source project. Keep that folder to preserve them. Set **SCREENER_HOME** to another writable directory if desired. The five source example JSON files are in **presets/**.
+
+Current membership comes from Wikipedia, with the Open Knowledge CSV mirror as fallback. Source and retrieval timestamp are displayed. Membership cache lasts 24 hours; failed refreshes can use an explicitly dated cached snapshot. Sector mode has **Load / refresh sectors**. Custom lists and the benchmark do not require the constituent source.
+
+BRK.B and BF.B normalize to BRK-B and BF-B. **Ticker aliases / symbol changes** lets you route an old/displayed ticker to a different provider symbol and records provider_ticker in results. An alias uses the destination's history; it does not automatically splice different securities. Changing aliases changes the cache identity.
+
+## Missing data and boolean decisions
+
+Each rule is PASS, FAIL or UNAVAILABLE. Missing values never pass, even for a not-equal comparison. AND fails if a valid branch fails; otherwise an unavailable required branch makes the group unavailable. OR passes if a valid branch passes; otherwise an unavailable branch can prevent deciding the result.
+
+“Analyzed” counts stocks with a decidable root expression. A stock can have a decided result and an unavailable non-decisive branch; inspect rules_unavailable. “Insufficient” counts undecidable overall expressions. Passing percentages use the requested universe as denominator. Rule metrics have stable ID prefixes; inspect/download the configuration to map IDs to rule names.
+
+## Historical research and limitations
+
+The engine clips prices at the screening date **before computing indicators**. Normal charts/exports also end there, even if the disk cache contains newer prices. Weekend/holiday requests resolve to the preceding completed session.
+
+**Past screens using current constituents have survivorship bias.** Historical membership data is not supplied. Yahoo adjusted history is retrospectively restated, rather than an archived point-in-time vintage. Corporate actions, security identifiers and source corrections can affect research; full refresh is appropriate for important comparisons.
+
+Forward outcomes are a separate opt-in view with independent future-price input. They cannot feed screening rules or normal history exports. Incomplete horizons stay NA. Individual returns and descriptive statistics are reported; portfolio rebalancing, transaction costs, execution and delisted membership are not modeled.
+
+Yahoo Finance is an unofficial, rate-limited source. Full-universe requests can yield partial results. Ticker failures are displayed rather than interpreted as failed trends or replaced with invented prices. Wait and retry failed prices if limited. Check the provider's applicable use terms. Provider uptime, historical field availability and quote accuracy cannot be guaranteed.
+
+No alternative authenticated data API, archived constituent membership or point-in-time security master is bundled. **PriceProvider** is the replacement point for another API. No additional non-MA technical indicators, portfolio backtester or automated trading are included. Extremely large periods can exceed available history and are rejected/reported as insufficient.
+
+## CLI and tests
+
+~~~bash
+# Offline screen
+python -m trend_screener.cli --demo --date 2024-01-16 --output demo-results.csv
+
+# Live custom list
+python -m trend_screener.cli --tickers "AAPL,MSFT,BRK.B" --output sample-results.csv
+
+# Full current S&P 500 using an example JSON
+python -m trend_screener.cli --config presets/01_all_moving_averages_rising.json
+
+# Deterministic math, cache, export and dashboard interaction tests
+python -m pytest -q
+~~~
+
+The CLI accepts **--cache-dir**, **--refresh**, **--date** and **--config**. Explicit CLI flags choose live/demo mode; a preset's sidebar settings do not override CLI flags. Normal tests make no live market requests. See **TEST_REPORT.md** for actual results and verification limits.
+
+The independently specified datasets in **examples/synthetic_scenarios.json** include exact expected values, expressed as fractions where helpful. They cover uninterrupted rises/declines, dips, flat lines, opposing endpoint/slope directions and acceleration.
+
+## Source organization
+
+| Module | Responsibility |
+| --- | --- |
+| app.py, run_dashboard.py | Dashboard launchers |
+| dashboard.py | Streamlit controls, state, results and downloads |
+| models.py | Validated MA/rule/group configuration and JSON |
+| universe.py | Current membership, metadata and symbol normalization |
+| providers.py, cache.py, calendar.py | Data abstraction, aliases, validation, Parquet cache and NYSE sessions |
+| indicators.py, metrics.py | Causal MAs/returns and trend mathematics |
+| rules.py, engine.py | Independent conditions, nested logic, indicator reuse and results |
+| charts.py, exports.py | Auditable Plotly views and CSV/Excel/ZIP downloads |
+| presets.py, presets/ | Editable built-in and local presets |
+| research.py, cli.py, demo.py | Separate forward research, CLI and synthetic data |
+| tests/ | Closed-form, adversarial, missing-data, cache and application interaction cases |
+
+Python package modules live in **trend_screener/**.
+
+API references: [yfinance](https://ranaroussi.github.io/yfinance/reference/api/yfinance.download.html), [Streamlit](https://docs.streamlit.io/develop/api-reference/data/st.dataframe), [pandas-market-calendars](https://pandas-market-calendars.readthedocs.io/en/latest/usage.html). Constituent fallback provenance: [Open Knowledge S&P 500 dataset](https://github.com/datasets/s-and-p-500-companies).
