@@ -1146,6 +1146,7 @@ def main():
             return
     config = st.session_state.draft
     header_slot = st.empty()
+    status_slot = st.container(key="screen_status")
     settings = settings_panel(config)
     with st.container(border=True, key="run_toolbar"):
         left, update, right = st.columns([1, 1.3, 2.7])
@@ -1167,8 +1168,9 @@ def main():
     with presets:
         presets_panel(config)
     if run_clicked or update_clicked:
-        run_screen(config, {**settings, "refresh_now": update_clicked, "retry_missing": update_clicked,
-                            "force": update_clicked and settings["price_update_scope"] == "Full price history"})
+        with status_slot:
+            run_screen(config, {**settings, "refresh_now": update_clicked, "retry_missing": update_clicked,
+                                "force": update_clicked and settings["price_update_scope"] == "Full price history"})
     run = st.session_state.get("run")
     applied = st.session_state.run_settings if run is not None else settings
     with history:

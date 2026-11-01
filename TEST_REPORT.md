@@ -2,7 +2,7 @@
 
 Original release verification date: October 31, 2026 (America/New_York). Python 3.12.14.
 
-**Latest selected-method tooltip update (version 1.2.4): 19 focused UI tests passed.**
+**Latest status-position update (version 1.2.5): two focused UI tests and a layout check passed.**
 Most recent complete suite: version 1.2.3, **195 tests passed**.
 
 The original release results below are retained as history. Risk/performance and UI update verification follow at the end.
@@ -381,3 +381,17 @@ suite; the previous full 195-test result above is retained with its version.
 Physical browser hover/popup layout was not verified; these checks exercise the
 actual Streamlit script/widget help payload. No new live-market retrieval was
 performed for this update.
+
+## Top screening status area — November 1, 2026
+
+Version 1.2.5 reserves a status container directly below the workspace header,
+before the Run Screen/Update buttons and tabs. Screening runs render their
+download/analysis progress, completion messages and errors into that container.
+Execution still occurs after draft controls are collected.
+
+Two focused Streamlit checks passed in 7.47 seconds: normal runs/filter changes
+with cached-data reuse, and invalid risk-input recovery preserving the applied
+screen. A separate offline AppTest verified the actual status container precedes
+the run toolbar in the main layout and contains the completion message. Ruff and
+Python compilation passed. No new numerical-suite or native-browser pixel check
+was performed for this layout-only update.

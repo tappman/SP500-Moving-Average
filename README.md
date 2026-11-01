@@ -114,6 +114,9 @@ below the shared MA table, with an **Add condition** button for additional
 independent conditions. Universe and date controls stay in the sidebar, and
 **Run Screen** stays above the workspace.
 
+Screening/download progress and completion/error messages appear at the top,
+directly below the workspace header and above the run buttons and tabs.
+
 Disabling or removing an MA automatically pauses its dependent conditions,
 including relationships referencing that line. Re-enabling/re-adding the MA
 resumes only conditions that were paused automatically. Conditions you disabled
