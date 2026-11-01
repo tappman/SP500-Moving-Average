@@ -155,7 +155,7 @@ class YFinanceProvider:
                         if recovered["adj_close"].notna().any():
                             output.frames[ticker] = recovered
                             output.errors.pop(ticker, None)
-                    except (Exception):
+                    except Exception:
                         # Preserve the original diagnostic if the backup request fails.
                         continue
             if begin + self.batch_size < len(tickers):
