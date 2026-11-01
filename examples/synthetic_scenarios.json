@@ -1,0 +1,64 @@
+{
+  "description": "Synthetic moving-average values, not market prices. X regression observations and X transitions are distinct.",
+  "scenarios": [
+    {
+      "name": "Uninterrupted rise",
+      "ma_values": [100, 101, 102, 103, 104],
+      "regression_observations": 5,
+      "net_transitions": 4,
+      "expected": {"slope": 1, "normalized_slope": "100/102", "r2": 1, "pct_change": 4, "positive_count": 4, "strict": true}
+    },
+    {
+      "name": "Overall rise with a dip",
+      "ma_values": [100, 102, 101, 103, 104],
+      "regression_observations": 5,
+      "net_transitions": 4,
+      "expected": {"slope": 0.9, "normalized_slope": "90/102", "r2": 0.81, "pct_change": 4, "positive_count": 3, "strict": false}
+    },
+    {
+      "name": "Uninterrupted decline",
+      "ma_values": [104, 103, 102, 101, 100],
+      "regression_observations": 5,
+      "net_transitions": 4,
+      "expected": {"slope": -1, "normalized_slope": "-100/102", "r2": 1, "pct_change": "-400/104", "positive_count": 0, "strict": false}
+    },
+    {
+      "name": "Flat line",
+      "ma_values": [100, 100, 100, 100, 100],
+      "regression_observations": 5,
+      "net_transitions": 4,
+      "expected": {"slope": 0, "normalized_slope": 0, "r2": null, "pct_change": 0, "positive_count": 0, "strict": false}
+    },
+    {
+      "name": "Positive endpoint change but negative regression slope",
+      "ma_values": [10, 100, 90, 80, 70, 11],
+      "regression_observations": 6,
+      "net_transitions": 5,
+      "expected": {"slope": "-19/7", "pct_change": 10, "positive_count": 1, "strict": false}
+    },
+    {
+      "name": "Negative endpoint change but positive regression slope",
+      "ma_values": [100, 10, 20, 30, 40, 99],
+      "regression_observations": 6,
+      "net_transitions": 5,
+      "expected": {"slope": "19/7", "pct_change": -1, "positive_count": 4, "strict": false}
+    }
+  ],
+  "acceleration_examples": {
+    "percentage_change": {
+      "ma_values": [100, 100.5, 101, 102, 104],
+      "transitions_per_window": 2,
+      "expected_previous_change_pct": 1,
+      "expected_current_change_pct": "300/101",
+      "expected_acceleration_pp": "300/101 - 1"
+    },
+    "normalized_slope": {
+      "ma_values": [100, 101, 102, 104, 106, 108],
+      "observations_per_window": 3,
+      "expected_previous_raw_slope": 1,
+      "expected_current_raw_slope": 2,
+      "expected_previous_normalized_slope_pct": "100/101",
+      "expected_current_normalized_slope_pct": "200/106"
+    }
+  }
+}

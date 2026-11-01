@@ -56,3 +56,13 @@ Membership retrieval timestamp: 2026-11-01T03:39:44.539802+00:00. Successful liv
 | pytest | 9.2.0 |
 
 Exact direct dependency versions are also recorded in constraints-tested.txt. See README.md for installation, controls, formula definitions, caching policy and operational limits.
+
+## Double-click launcher update
+
+Added START_WINDOWS.bat, START_MAC.command, bootstrap.py and START_HERE.txt.
+The shared bootstrap created a fresh private environment, installed the declared
+dependencies and started Streamlit; HTTP readiness returned 200. A subsequent
+smoke run verifies setup reuse. Mac shell syntax and Python compilation/lint
+were checked. Native Windows and macOS double-click behavior and automatic
+browser opening remain unverified in this environment. Python 3.11+ must be
+installed once before using either launcher.

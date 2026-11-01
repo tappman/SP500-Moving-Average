@@ -1,0 +1,157 @@
+{
+  "name": "Strong Bullish Alignment",
+  "moving_averages": [
+    {
+      "kind": "SMA",
+      "period": 5,
+      "enabled": true,
+      "show": true
+    },
+    {
+      "kind": "SMA",
+      "period": 20,
+      "enabled": true,
+      "show": true
+    },
+    {
+      "kind": "SMA",
+      "period": 50,
+      "enabled": true,
+      "show": true
+    },
+    {
+      "kind": "SMA",
+      "period": 200,
+      "enabled": true,
+      "show": true
+    }
+  ],
+  "rules": [
+    {
+      "id": "above_SMA5_SMA20",
+      "name": "MA5 above MA20",
+      "ma": "SMA5",
+      "method": "relative",
+      "lookback": 1,
+      "operator": ">",
+      "threshold": 0.0,
+      "enabled": true,
+      "group": "root",
+      "other": "SMA20",
+      "min_r2": null,
+      "min_positive_pct": null,
+      "reversal_lag": 5,
+      "confirmation": 1,
+      "allow_flat": true,
+      "positive_current": true,
+      "positive_previous": false
+    },
+    {
+      "id": "above_SMA20_SMA50",
+      "name": "MA20 above MA50",
+      "ma": "SMA20",
+      "method": "relative",
+      "lookback": 1,
+      "operator": ">",
+      "threshold": 0.0,
+      "enabled": true,
+      "group": "root",
+      "other": "SMA50",
+      "min_r2": null,
+      "min_positive_pct": null,
+      "reversal_lag": 5,
+      "confirmation": 1,
+      "allow_flat": true,
+      "positive_current": true,
+      "positive_previous": false
+    },
+    {
+      "id": "above_SMA50_SMA200",
+      "name": "MA50 above MA200",
+      "ma": "SMA50",
+      "method": "relative",
+      "lookback": 1,
+      "operator": ">",
+      "threshold": 0.0,
+      "enabled": true,
+      "group": "root",
+      "other": "SMA200",
+      "min_r2": null,
+      "min_positive_pct": null,
+      "reversal_lag": 5,
+      "confirmation": 1,
+      "allow_flat": true,
+      "positive_current": true,
+      "positive_previous": false
+    },
+    {
+      "id": "slope_20",
+      "name": "MA20 slope positive",
+      "ma": "SMA20",
+      "method": "normalized_slope",
+      "lookback": 10,
+      "operator": ">",
+      "threshold": 0.0,
+      "enabled": true,
+      "group": "root",
+      "other": "SMA50",
+      "min_r2": null,
+      "min_positive_pct": null,
+      "reversal_lag": 5,
+      "confirmation": 1,
+      "allow_flat": true,
+      "positive_current": true,
+      "positive_previous": false
+    },
+    {
+      "id": "slope_50",
+      "name": "MA50 slope positive",
+      "ma": "SMA50",
+      "method": "normalized_slope",
+      "lookback": 20,
+      "operator": ">",
+      "threshold": 0.0,
+      "enabled": true,
+      "group": "root",
+      "other": "SMA50",
+      "min_r2": null,
+      "min_positive_pct": null,
+      "reversal_lag": 5,
+      "confirmation": 1,
+      "allow_flat": true,
+      "positive_current": true,
+      "positive_previous": false
+    },
+    {
+      "id": "above_PRICE_SMA20",
+      "name": "Price above MA20",
+      "ma": "PRICE",
+      "method": "relative",
+      "lookback": 1,
+      "operator": ">",
+      "threshold": 0.0,
+      "enabled": true,
+      "group": "root",
+      "other": "SMA20",
+      "min_r2": null,
+      "min_positive_pct": null,
+      "reversal_lag": 5,
+      "confirmation": 1,
+      "allow_flat": true,
+      "positive_current": true,
+      "positive_previous": false
+    }
+  ],
+  "groups": [
+    {
+      "id": "root",
+      "name": "All conditions",
+      "logic": "AND",
+      "parent": ""
+    }
+  ],
+  "price_source": "adj_close",
+  "return_kind": "simple",
+  "data_settings": {},
+  "schema_version": 1
+}

@@ -1,0 +1,44 @@
+{
+  "name": "Smoothly Rising MA20",
+  "moving_averages": [
+    {
+      "kind": "SMA",
+      "period": 20,
+      "enabled": true,
+      "show": true
+    }
+  ],
+  "rules": [
+    {
+      "id": "slope_20",
+      "name": "MA20 slope positive",
+      "ma": "SMA20",
+      "method": "normalized_slope",
+      "lookback": 15,
+      "operator": ">",
+      "threshold": 0.0,
+      "enabled": true,
+      "group": "root",
+      "other": "SMA50",
+      "min_r2": 0.8,
+      "min_positive_pct": 80.0,
+      "reversal_lag": 5,
+      "confirmation": 1,
+      "allow_flat": true,
+      "positive_current": true,
+      "positive_previous": false
+    }
+  ],
+  "groups": [
+    {
+      "id": "root",
+      "name": "All conditions",
+      "logic": "AND",
+      "parent": ""
+    }
+  ],
+  "price_source": "adj_close",
+  "return_kind": "simple",
+  "data_settings": {},
+  "schema_version": 1
+}

@@ -1,0 +1,94 @@
+{
+  "name": "All Moving Averages Rising",
+  "moving_averages": [
+    {
+      "kind": "SMA",
+      "period": 5,
+      "enabled": true,
+      "show": true
+    },
+    {
+      "kind": "SMA",
+      "period": 20,
+      "enabled": true,
+      "show": true
+    },
+    {
+      "kind": "SMA",
+      "period": 50,
+      "enabled": true,
+      "show": true
+    }
+  ],
+  "rules": [
+    {
+      "id": "slope_5",
+      "name": "MA5 slope positive",
+      "ma": "SMA5",
+      "method": "normalized_slope",
+      "lookback": 5,
+      "operator": ">",
+      "threshold": 0.0,
+      "enabled": true,
+      "group": "root",
+      "other": "SMA50",
+      "min_r2": null,
+      "min_positive_pct": null,
+      "reversal_lag": 5,
+      "confirmation": 1,
+      "allow_flat": true,
+      "positive_current": true,
+      "positive_previous": false
+    },
+    {
+      "id": "slope_20",
+      "name": "MA20 slope positive",
+      "ma": "SMA20",
+      "method": "normalized_slope",
+      "lookback": 10,
+      "operator": ">",
+      "threshold": 0.0,
+      "enabled": true,
+      "group": "root",
+      "other": "SMA50",
+      "min_r2": null,
+      "min_positive_pct": null,
+      "reversal_lag": 5,
+      "confirmation": 1,
+      "allow_flat": true,
+      "positive_current": true,
+      "positive_previous": false
+    },
+    {
+      "id": "slope_50",
+      "name": "MA50 slope positive",
+      "ma": "SMA50",
+      "method": "normalized_slope",
+      "lookback": 20,
+      "operator": ">",
+      "threshold": 0.0,
+      "enabled": true,
+      "group": "root",
+      "other": "SMA50",
+      "min_r2": null,
+      "min_positive_pct": null,
+      "reversal_lag": 5,
+      "confirmation": 1,
+      "allow_flat": true,
+      "positive_current": true,
+      "positive_previous": false
+    }
+  ],
+  "groups": [
+    {
+      "id": "root",
+      "name": "All conditions",
+      "logic": "AND",
+      "parent": ""
+    }
+  ],
+  "price_source": "adj_close",
+  "return_kind": "simple",
+  "data_settings": {},
+  "schema_version": 1
+}

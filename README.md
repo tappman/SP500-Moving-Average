@@ -4,6 +4,15 @@ A complete Python/Streamlit research application for finding stocks whose moving
 
 ## Start the dashboard
 
+**Double-click option:** extract the ZIP and open **START_WINDOWS.bat** on Windows
+or **START_MAC.command** on Mac. Install Python 3.11+ once first. The launcher
+creates the environment, installs packages on its first run, and opens the
+dashboard in your browser automatically. Later launches reuse the setup.
+See **START_HERE.txt**. These are launch scripts; a standalone EXE/Mac app is
+not bundled. Native Windows/Mac double-click behavior has not been verified here.
+
+The manual setup below is also available.
+
 Install **Python 3.11 or newer**, extract this project, and open a terminal in the extracted **sp500-trend-screener** folder.
 
 **macOS / Linux**

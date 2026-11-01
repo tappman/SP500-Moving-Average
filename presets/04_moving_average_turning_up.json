@@ -1,0 +1,63 @@
+{
+  "name": "Moving Average Turning Up",
+  "moving_averages": [
+    {
+      "kind": "SMA",
+      "period": 20,
+      "enabled": true,
+      "show": true
+    }
+  ],
+  "rules": [
+    {
+      "id": "turn_20",
+      "name": "MA20 turning up",
+      "ma": "SMA20",
+      "method": "turn_up",
+      "lookback": 10,
+      "operator": "==",
+      "threshold": 0.0,
+      "enabled": true,
+      "group": "root",
+      "other": "SMA50",
+      "min_r2": null,
+      "min_positive_pct": null,
+      "reversal_lag": 5,
+      "confirmation": 1,
+      "allow_flat": false,
+      "positive_current": true,
+      "positive_previous": false
+    },
+    {
+      "id": "above_PRICE_SMA20",
+      "name": "Price above MA20",
+      "ma": "PRICE",
+      "method": "relative",
+      "lookback": 1,
+      "operator": ">",
+      "threshold": 0.0,
+      "enabled": true,
+      "group": "root",
+      "other": "SMA20",
+      "min_r2": null,
+      "min_positive_pct": null,
+      "reversal_lag": 5,
+      "confirmation": 1,
+      "allow_flat": true,
+      "positive_current": true,
+      "positive_previous": false
+    }
+  ],
+  "groups": [
+    {
+      "id": "root",
+      "name": "All conditions",
+      "logic": "AND",
+      "parent": ""
+    }
+  ],
+  "price_source": "adj_close",
+  "return_kind": "simple",
+  "data_settings": {},
+  "schema_version": 1
+}

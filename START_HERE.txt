@@ -1,0 +1,28 @@
+MA TREND LAB — START WITH A DOUBLE CLICK
+
+1. Extract the whole ZIP first. Do not run a launcher from inside the ZIP.
+2. Open the extracted folder containing app.py and these launchers.
+3. Windows: double-click START_WINDOWS.bat.
+   Mac: double-click START_MAC.command.
+
+Python 3.11 or newer must be installed once, from python.org.
+On Windows, enable "Add Python to PATH" in the Python installer.
+
+On first launch, the app automatically creates its own Python environment and
+downloads its packages. This needs Internet access and may take several minutes.
+Later launches reuse that setup. No commands need to be typed.
+
+Your browser opens automatically when the dashboard is ready.
+Keep the launcher window open while using the app.
+
+In the dashboard:
+ - Select Synthetic demo (offline) to try it without market-data downloads.
+ - Click Run Screen.
+ - Select Live Yahoo Finance for real prices, subject to provider availability.
+
+This is a Python application with double-click launchers, not a standalone
+Windows EXE or Mac app.
+If a launcher cannot start, keep the error text and ask for help.
+
+See README.md for the full instructions and TEST_REPORT.md for tested behavior
+and platform limits.
