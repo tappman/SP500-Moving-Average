@@ -67,8 +67,42 @@ def test_cache_refresh_policy_and_cache_only(tmp_path, fake_provider):
     meta["last_success"] = "2020-01-01T00:00:00+00:00"
     meta_path.write_text(json.dumps(meta))
     cache.get_many(["AAA"], date(2024, 1, 2), date(2024, 1, 31))
+    assert len(fake_provider.calls) == 1  # Cache age alone no longer triggers a default refresh.
+    cache.get_many(["AAA"], date(2024, 1, 2), date(2024, 1, 31), refresh_recent=True)
     assert len(fake_provider.calls) == 2
     cache.get_many(["AAA"], date(2024, 1, 2), date(2024, 1, 31), force=True, cache_only=True)
+    assert len(fake_provider.calls) == 2
+
+
+def test_cache_first_survives_restart_and_explicit_updates_bypass_recent_timestamp(tmp_path, fake_provider):
+    start, end = date(2023, 1, 3), date(2024, 1, 31)
+    cache = PriceCache(tmp_path, fake_provider)
+    original = cache.get_many(["AAA"], start, end)
+    assert len(original.downloads) == 1
+    first_stamp = original.metadata["AAA"]["last_success"]
+    saved = PriceCache(tmp_path, fake_provider).get_many(["AAA"], start, end)
+    assert len(fake_provider.calls) == 1 and saved.downloads == []
+    assert saved.metadata["AAA"]["last_success"] == first_stamp
+    for _ in range(2):
+        updated = cache.get_many(["AAA"], start, end, refresh_now=True)
+        assert len(updated.downloads) == 1
+        assert updated.downloads[0]["reason"] == "Explicit price update"
+        assert fake_provider.calls[-1][1] == date(2024, 1, 10)  # Exactly the recent 21 calendar days.
+        assert fake_provider.calls[-1][2] == end
+    assert len(fake_provider.calls) == 3
+    cache.get_many(["AAA"], start, end, refresh_now=True, retry_missing=True, cache_only=True)
+    assert len(fake_provider.calls) == 3  # Cache-only still wins at the provider boundary.
+    assert len(cache.get_many(["AAA"], start, end).frames["AAA"]) == len(original.frames["AAA"])
+
+
+def test_explicit_full_update_redownloads_cached_span_once(tmp_path, fake_provider):
+    cache = PriceCache(tmp_path, fake_provider)
+    cache.get_many(["AAA"], date(2023, 1, 3), date(2024, 1, 31))
+    fake_provider.factor = .9  # Revised adjusted prices must not cause a duplicate full-span request.
+    updated = cache.get_many(["AAA"], date(2023, 6, 1), date(2024, 1, 31), force=True)
+    assert fake_provider.calls[-1][1:] == (date(2023, 1, 3), date(2024, 1, 31))
+    assert updated.downloads[0]["reason"] == "Full history refresh"
+    cache.get_many(["AAA"], date(2023, 6, 1), date(2024, 1, 31))
     assert len(fake_provider.calls) == 2
 
 

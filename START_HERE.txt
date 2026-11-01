@@ -19,6 +19,9 @@ In the dashboard:
  - Select Synthetic demo (offline) to try it without market-data downloads.
  - Click Run Screen.
  - Select Live Yahoo Finance for real prices, subject to provider availability.
+ - Run Screen uses saved prices first and downloads only missing history.
+ - Click Update prices & run when you want existing prices refreshed.
+ - Saved prices only prevents all price downloads, including missing history.
 
 This is a Python application with double-click launchers, not a standalone
 Windows EXE or Mac app.

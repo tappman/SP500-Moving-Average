@@ -20,6 +20,7 @@ class CachedBatch:
     metadata: dict[str, dict] = field(default_factory=dict)
     errors: dict[str, str] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    downloads: list[dict] = field(default_factory=list)
 
 
 def _revised(old: pd.DataFrame, new: pd.DataFrame) -> bool:
@@ -70,15 +71,17 @@ class PriceCache:
         temp_meta.replace(meta_path)
 
     def get_many(self, tickers: list[str], start: date, end: date, *,
-                 refresh_recent: bool = True, force: bool = False,
+                 refresh_recent: bool = False, force: bool = False, refresh_now: bool = False,
                  cache_only: bool = False, retry_missing: bool = False, progress=None) -> CachedBatch:
         if start > end:
             raise ValueError("History start must not be after end")
         # One writer per provider cache, across processes. Reads/writes are atomic.
         with FileLock(str(self.directory / "cache.lock"), timeout=300):
-            return self._get_many(tickers, start, end, refresh_recent, force, cache_only, retry_missing, progress)
+            return self._get_many(tickers, start, end, refresh_recent, force, cache_only, retry_missing, progress,
+                                  refresh_now)
 
-    def _get_many(self, tickers, start, end, refresh_recent, force, cache_only, retry_missing, progress):
+    def _get_many(self, tickers, start, end, refresh_recent, force, cache_only, retry_missing, progress,
+                  refresh_now=False):
         result = CachedBatch()
         stored = {t: self._read(t) for t in dict.fromkeys(tickers)}
         plans = {}
@@ -95,7 +98,7 @@ class PriceCache:
                 if end > right:
                     spans.append((max(start, right - timedelta(days=14)), end))
                 stamp = datetime.fromisoformat(meta["last_success"])
-                if refresh_recent and (now - stamp).total_seconds() > 6 * 3600 and end <= right:
+                if refresh_now or (refresh_recent and (now - stamp).total_seconds() > 6 * 3600 and end <= right):
                     spans.append((max(start, end - timedelta(days=21)), end))
                 if retry_missing and not frame.empty and frame.adj_close.notna().any():
                     first_valid = frame.adj_close.first_valid_index().date()
@@ -112,6 +115,9 @@ class PriceCache:
         completed, failed_batches = 0, 0
         total = sum(len(group) for _, group in work)
         for task_index, ((left, right), group) in enumerate(work):
+            result.downloads.append({"tickers": list(group), "start": str(left), "end": str(right),
+                                     "reason": "Full history refresh" if force else
+                                     "Explicit price update" if refresh_now else "Missing history / requested refresh"})
             batch = self.provider.download(group, left, right)
             result.errors.update(batch.errors)
             failed_batches = failed_batches + 1 if not batch.frames else 0
@@ -119,8 +125,13 @@ class PriceCache:
                 old, meta = stored[t]
                 coverage_start = min(left, date.fromisoformat(meta["coverage_start"])) if meta else left
                 coverage_end = max(right, date.fromisoformat(meta["coverage_end"])) if meta else right
-                if not old.empty and _revised(old, fresh):
+                if force:
+                    # This request already covers the entire cached span, including revisions.
+                    combined = fresh
+                elif not old.empty and _revised(old, fresh):
                     result.warnings.append(f"{t}: adjusted/raw history changed; refreshing the full cached span.")
+                    result.downloads.append({"tickers": [t], "start": str(coverage_start), "end": str(coverage_end),
+                                             "reason": "Adjustment revision: refresh full cached span"})
                     full = self.provider.download([t], coverage_start, coverage_end)
                     if t not in full.frames:
                         result.errors[t] = "Adjustment revision detected; full refresh failed. Retained old cache."

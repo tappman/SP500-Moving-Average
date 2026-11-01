@@ -65,6 +65,13 @@ Installation needs Internet access. Once installed, **Synthetic demo (offline)**
 6. Select a result row to open its chart below the table, or use **Stock explorer**. Select a rule to highlight. The shaded segment, dashed regression fit and information panel explain exactly why it passed.
 7. Change a threshold and run again. Loaded prices and unchanged indicators are reused.
 
+Each trend-rule control has a help tooltip. The selected method also shows its
+calculation and an example beside the settings, with separate explanations for
+lookback, comparison, threshold units, reversal/acceleration options and optional
+consistency filters. The MA type selector spells out **SMA — Simple moving
+average** and **EMA — Exponential moving average**. Saved JSON and calculation
+columns keep the stable `SMA`/`EMA` codes, such as `SMA20` and `EMA20`.
+
 For “MA20 increased on at least 8 of the last 10 days,” choose **Positive transition count**, lookback **10**, comparison **>=**, threshold **8**. This requires **11 MA observations**. Combine it with a positive-slope rule, or use the regression rule's **Also require mostly rising** control.
 
 ## Dashboard features
@@ -239,9 +246,38 @@ Daily bars are aligned to expected NYSE sessions. Gaps remain NaN; prices are ne
 
 ## Cache, membership and symbol changes
 
-The local Parquet cache downloads absent ranges, checks overlapping bars, reuses successful history across restarts and refreshes recent bars after six hours in latest mode. **Retry failed / missing prices** repairs incomplete tickers without reloading successful histories. Full refresh and cached-prices-only mode are separate options.
+**Run Screen always checks saved prices first.** It reuses the in-memory data
+when the request is unchanged, otherwise reads the local Parquet cache. It
+downloads missing tickers/date ranges as needed, including additional MA warm-up
+or a newly completed session. Saved complete histories are reused across app
+restarts. Cache age alone no longer causes normal dashboard or CLI screens to
+refresh prices; the previous automatic six-hour latest-mode refresh is removed.
+
+- **Saved prices only (no downloads)** prevents price-provider calls, even when
+  history is missing. Leaving it **unticked still uses saved prices first**; it
+  merely allows missing ranges to download. Missing observations remain unavailable.
+- **Update prices & run** is a separate, explicit one-click action. By default it
+  refreshes the last **21 calendar days** up to the selected screening session,
+  downloads missing histories/ranges, retries unavailable tickers and repairs
+  saved gaps. Recent updates preserve older saved history.
+- **Price update options → Update scope → Full price history** makes that update
+  button redownload the entire cached span. Selecting this scope does not affect
+  a normal Run Screen, and a completed update does not make later runs repeat it.
+- Update is disabled while Saved prices only is selected. Results report whether
+  the screen used saved prices without downloads or actually requested price
+  data; **Price download activity** lists the symbols, date ranges and reasons.
+  Reading from disk is no longer presented as a price download.
+
+Missing-range extensions include a **14-calendar-day overlap** to check provider
+corrections, so downloads are not always limited to strictly absent dates. When
+both earlier and later history are missing, the loader may request their combined
+contiguous span. The cache API still offers an opt-in `refresh_recent=True`
+six-hour policy for explicit callers; normal dashboard/CLI flows do not enable it.
 
 If overlapping close or adjusted-close values have been revised, the full cached span is refreshed to avoid mixing adjustment vintages. Failed refreshes retain old cache and report errors. Writes are atomic and protected by an inter-process writer lock. Requests are batched and retried; a circuit breaker stops new downloads after two entirely failed batches.
+
+An explicitly requested full-history refresh already covers that span and does
+not issue another identical full download simply because revised prices are found.
 
 Cache and user presets live in **.screener/** beside the source project. Keep that folder to preserve them. Set **SCREENER_HOME** to another writable directory if desired. The five source example JSON files are in **presets/**.
 

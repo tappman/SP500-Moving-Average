@@ -140,6 +140,7 @@ class ScreenConfig:
                               "S&P 500 index", "Historical membership CSV"},
             "time_mode": {"Latest completed session", "Historical date"},
             "period": {"3 months", "6 months", "1 year", "2 years", "3 years", "5 years", "10 years", "Custom dates"},
+            "price_update_scope": {"Recent prices + missing dates", "Full price history"},
         }
         for name, allowed in choices.items():
             if name in self.data_settings and self.data_settings[name] not in allowed:

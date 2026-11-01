@@ -2,7 +2,7 @@
 
 Original release verification date: October 31, 2026 (America/New_York). Python 3.12.14.
 
-**Latest portable research update (version 1.2.1): 168 tests passed.**
+**Latest rule-help/cache update (version 1.2.2): 184 tests passed.**
 
 The original release results below are retained as history. Risk/performance and UI update verification follow at the end.
 
@@ -253,3 +253,52 @@ unverified. Original provider vintage reconstruction and proof that a person
 never examined the declared holdout remain unavailable; saved snapshots preserve
 the data loaded by this app when frozen. Source/software version information is
 recorded, while the bundle does not embed an executable software environment.
+
+## Rule explanations and explicit price updates — November 1, 2026
+
+Version 1.2.2 adds plain-language help for every trend/relationship method and
+its controls, with visible calculation/examples, lookback and threshold units,
+comparison meanings, group logic, optional consistency filters, reversal lag,
+confirmation and acceleration requirements. The MA builder and rule choices
+spell out Simple moving average and Exponential moving average while keeping
+the existing SMA/EMA JSON and calculation identifiers. Latest-value relationship
+rules explicitly disable their unused lookback control.
+
+The earlier price cache already checked saved data first, but normal latest-date
+runs could refresh recent bars after six hours. The generic loading label also
+did not distinguish disk reads from actual provider calls. Normal Run Screen
+and CLI requests now reuse complete saved histories without an age-triggered
+refresh. Missing history can still download unless Saved prices only is selected.
+
+The separate **Update prices & run** action refreshes recent prices and repairs
+gaps, or explicitly redownloads the full cached span when that scope is selected.
+It bypasses in-memory reuse and recent-download timestamps. The action is not
+sticky: a later ordinary Run Screen uses saved data even if the full-history
+update scope remains selected. Full-history revisions no longer trigger a second
+identical full-span download. Actual provider attempts, symbols, ranges and
+reasons are shown separately from cache reads.
+
+### Executed verification
+
+- Complete suite: **184 tests passed in 137.18 seconds**. Ruff and Python
+  compilation passed on the final source.
+- Streamlit tests exercise all **14 trend methods** and **four relationship
+  methods**, checking the method controls' help fields and valid screen behavior.
+  MA editor/selection tests verify full type names and canonical EMA/SMA codes.
+- Provider-call regression tests cover unchanged normal runs, old download
+  timestamps, cleared in-memory state, reopening the dashboard against the same
+  disk cache, switching cache-only on/off, explicit recent and full updates,
+  full-history scope followed by an ordinary Run Screen, and longer-history
+  requests that fetch the older extension with overlap.
+- Cache tests verify recent updates recheck exactly 21 calendar days, even
+  immediately after a successful download; cache-only prevents the call; full
+  refresh covers the complete cached span once even with adjusted-price revisions.
+  Download diagnostics are empty on genuine saved-price reruns.
+- Updated Streamlit readiness returned **HTTP 200**, body `ok`; the smoke-test
+  process was stopped afterward.
+
+These new download/caching checks use deterministic fake/demo providers to
+verify exact call counts and ranges; no fresh live Yahoo download was claimed.
+The S&P 500 membership list has a separate daily cache and is distinct from
+price downloads. Native browser pixel layout remains unverified; the actual
+Streamlit widget/script runtime, table configuration and chart creation are tested.

@@ -7,6 +7,7 @@ from streamlit.testing.v1 import AppTest
 
 from trend_screener.demo import DemoProvider
 from trend_screener.presets import builtins
+from trend_screener.models import METHODS, RELATION_METHODS
 
 
 @pytest.fixture
@@ -139,14 +140,16 @@ def test_duplicate_disable_remove_and_relationship(app):
     assert not app.exception and not app.error
 
 
-@pytest.mark.parametrize("method", ["strict", "positive_pct", "accel_pct", "accel_slope", "turn_up",
-                                    "max_drawdown_pct", "r2", "pct_change", "negative_count"])
+@pytest.mark.parametrize("method", [m for m in METHODS if m not in RELATION_METHODS])
 def test_method_controls_run(app, method):
     app.selectbox(key="v0_rule_slope_20_method").select(method).run()
     assert not app.exception
     app.button(key="run_screen").click().run()
     assert not app.exception and not app.error
     assert app.session_state["run"].config.rules[1].method == method
+    controls = [*app.number_input, *app.selectbox, *app.checkbox, *app.text_input, *app.button]
+    assert all(w.proto.help for w in controls if w.key and w.key.startswith("v0_rule_slope_20_"))
+    assert any(c.value.startswith("Example:") for c in app.caption)
 
 
 def test_preset_load_after_existing_run_invalidates_data_state_safely(app):

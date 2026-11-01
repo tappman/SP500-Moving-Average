@@ -43,7 +43,7 @@ def main():
         list(dict.fromkeys([*universe.ticker.tolist(),
                            *([config.risk.benchmark] if config.risk.enabled else [])])),
         start, end, force=args.refresh,
-        refresh_recent=not args.date,
+        refresh_recent=False,
     )
     run = screen(universe, data.frames, config, end)
     args.output.parent.mkdir(parents=True, exist_ok=True)

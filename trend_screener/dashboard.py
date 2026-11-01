@@ -28,6 +28,7 @@ from .presets import PresetStore, builtins
 from .providers import AliasedProvider, YFinanceProvider
 from .research import forward_returns
 from .rules import window_description
+from .rule_help import CONTROL_HELP, MA_TYPES, METHOD_HELP, OPERATOR_HELP, lookback_help, series_label
 from .risk import RISK_METRICS, risk_column_label
 from .risk_dashboard import performance_panel, risk_settings_panel
 from .research_dashboard import history_panel, portfolio_panel, research_lab
@@ -188,11 +189,23 @@ def settings_panel(config: ScreenConfig) -> dict:
                                           index=default_option(["simple", "log"], config.return_kind),
                                           key=key("return_kind"))
         st.caption("Returns always use adjusted close. Percentage controls use 1 = 1%, not 0.01.")
-        cache_only = st.checkbox("Use cached prices only", value=saved.get("cache_only", False),
-                                 key=key("cache_only"), disabled=demo)
-        refresh = st.checkbox("Force full price refresh on next run", value=False, key=key("force"))
-        retry_missing = st.checkbox("Retry failed / missing prices on next run", value=False, key=key("retry_missing"))
-        st.caption("Normal runs reuse cached history and refresh recent bars after six hours.")
+        st.markdown("### Price updates")
+        cache_only = st.checkbox("Saved prices only (no downloads)", value=saved.get("cache_only", False),
+                                 key=key("cache_only"),
+                                 help="Unticked still checks saved prices first and downloads only missing ranges. "
+                                      "Ticked prevents all price-provider calls, including for missing histories.")
+        st.caption("Run Screen uses saved prices first. Leaving this unticked only allows missing history "
+                   "to download; it does not refresh existing bars. Use Update prices & run to refresh them.")
+        with st.expander("Price update options"):
+            scopes = ["Recent prices + missing dates", "Full price history"]
+            update_scope = st.selectbox("Update scope", scopes,
+                                         index=default_option(scopes, saved.get("price_update_scope", scopes[0])),
+                                         key=key("price_update_scope"),
+                                         help="Used only by Update prices & run. Recent updates recheck the last "
+                                              "21 calendar days and repair saved gaps. Full history redownloads "
+                                              "the entire cached span. Run Screen ignores this update scope.")
+            st.caption("Updates keep existing history and check overlapping bars for corrections. A detected "
+                       "price-adjustment revision triggers a full refresh to keep the series consistent.")
         aliases = saved.get("ticker_aliases", {})
         with st.expander("Ticker aliases / symbol changes"):
             st.caption("Route a displayed ticker to a different Yahoo symbol, for example FB → META. "
@@ -223,13 +236,14 @@ def settings_panel(config: ScreenConfig) -> dict:
         "sector": sector, "time_mode": time_mode, "requested_date": str(requested or end),
         "period": period, "custom_start": str(display_start), "custom_end": str(end),
         "cache_only": cache_only,
+        "price_update_scope": update_scope,
         "ticker_aliases": aliases,
         **({"membership_digest": membership.digest, "membership_source": membership.source}
            if membership else {}),
     }
     config.data_settings = result
     return {**result, "screen_date": end, "display_start": display_start,
-            "demo": demo, "force": refresh, "retry_missing": retry_missing,
+            "demo": demo, "force": False, "retry_missing": False, "refresh_now": False,
             "incomplete_range": period == "Custom dates" and len(custom) != 2}
 
 
@@ -240,13 +254,24 @@ def moving_average_builder(config: ScreenConfig) -> None:
     if base_key not in st.session_state:
         st.session_state[base_key] = pd.DataFrame([asdict(m) for m in config.moving_averages],
                                                  columns=["kind", "period", "enabled", "show"])
+    base = st.session_state[base_key].copy()
+    base["kind"] = base.kind.map(lambda value: MA_TYPES.get(value, value))
     edited = st.data_editor(
-        st.session_state[base_key], num_rows="dynamic", hide_index=True, width="stretch",
+        base, num_rows="dynamic", hide_index=True, width="stretch",
         column_config={
-            "kind": st.column_config.SelectboxColumn("Type", options=["SMA", "EMA"], required=True),
-            "period": st.column_config.NumberColumn("Period (sessions)", min_value=1, step=1, required=True),
-            "enabled": st.column_config.CheckboxColumn("Enabled", default=True),
-            "show": st.column_config.CheckboxColumn("Show on charts", default=True),
+            "kind": st.column_config.SelectboxColumn("Type", options=list(MA_TYPES.values()), required=True,
+                                                     help="Simple moving average: equal weight to each price in "
+                                                          "the rolling window. Exponential moving average: "
+                                                          "more weight to recent prices."),
+            "period": st.column_config.NumberColumn("Period (sessions)", min_value=1, step=1, required=True,
+                                                      help="Number of trading-day prices for SMA, or the EMA "
+                                                           "span. A 20-period SMA averages 20 daily prices; "
+                                                           "weekends and holidays do not count."),
+            "enabled": st.column_config.CheckboxColumn("Enabled", default=True,
+                                                        help="Allow this MA to be calculated and selected by rules."),
+            "show": st.column_config.CheckboxColumn("Show on charts", default=True,
+                                                     help="Display this line on charts. Hiding a line does not "
+                                                          "remove its enabled screening rules."),
         }, key=key("ma_editor"),
     )
     averages = []
@@ -255,7 +280,8 @@ def moving_average_builder(config: ScreenConfig) -> None:
             period = float(row["period"])
             if not math.isfinite(period) or not period.is_integer():
                 raise ValueError("Every MA period must be a positive integer")
-            ma = MovingAverage(str(row["kind"]), int(period),
+            kind = next((code for code, label in MA_TYPES.items() if label == row["kind"]), str(row["kind"]))
+            ma = MovingAverage(kind, int(period),
                                True if pd.isna(row["enabled"]) else bool(row["enabled"]),
                                True if pd.isna(row["show"]) else bool(row["show"]))
             ma.validate()
@@ -271,29 +297,35 @@ def moving_average_builder(config: ScreenConfig) -> None:
     except (ValueError, TypeError, KeyError) as exc:
         st.session_state["ma_error"] = str(exc)
         st.error(str(exc))
-    st.caption("SMA uses a complete rolling window. EMA uses span=N, adjust=False, "
-               "and resets after missing prices. Longer EMA burn-in is downloaded automatically.")
+    st.caption("Simple moving average (SMA) gives equal weight to the prices in its rolling window. "
+               "Exponential moving average (EMA) gives more weight to recent prices, using span=N and "
+               "adjust=False. Missing prices reset the EMA. Warm-up history is included automatically.")
 
 
 def group_builder(config: ScreenConfig):
     st.subheader("How conditions combine")
     root = next(g for g in config.groups if g.id == "root")
     root.logic = st.radio("Root logic", ["AND", "OR"], index=default_option(["AND", "OR"], root.logic),
-                          horizontal=True, key=key("root_logic"))
+                          horizontal=True, key=key("root_logic"),
+                          help="AND requires all conditions/groups to pass; OR needs any passing branch. "
+                               "Missing data is unavailable, never automatically passing.")
     st.caption("AND requires every condition; OR accepts any passing condition. Empty groups are ignored.")
     with st.expander("Nested rule groups"):
         for group in [g for g in config.groups if g.id != "root"]:
             cols = st.columns([2, 1, 2, 1])
-            group.name = cols[0].text_input("Group name", group.name, key=key(f"gname_{group.id}"))
+            group.name = cols[0].text_input("Group name", group.name, key=key(f"gname_{group.id}"),
+                                           help="A descriptive name for this set of conditions; no effect on calculations.")
             group.logic = cols[1].selectbox("Logic", ["AND", "OR"],
                                             index=default_option(["AND", "OR"], group.logic),
-                                            key=key(f"glogic_{group.id}"))
+                                            key=key(f"glogic_{group.id}"), help="AND = every condition; OR = any condition.")
             parents = [g.id for g in config.groups if g.id != group.id]
             names = {g.id: g.name for g in config.groups}
             group.parent = cols[2].selectbox("Parent group", parents,
                                               index=default_option(parents, group.parent),
-                                              format_func=lambda v: names[v], key=key(f"gparent_{group.id}"))
-            if cols[3].button("Remove", key=key(f"gremove_{group.id}")):
+                                              format_func=lambda v: names[v], key=key(f"gparent_{group.id}"),
+                                              help="The outer group that combines this group's result. Circular groups are invalid.")
+            if cols[3].button("Remove", key=key(f"gremove_{group.id}"),
+                               help="Remove this group and move its rules/subgroups into its parent."):
                 for r in config.rules:
                     if r.group == group.id:
                         r.group = group.parent
@@ -303,10 +335,11 @@ def group_builder(config: ScreenConfig):
                 config.groups.remove(group)
                 st.rerun()
         with st.form(key("add_group_form")):
-            name = st.text_input("New group name", "Alternative conditions")
-            logic = st.selectbox("New group logic", ["AND", "OR"])
+            name = st.text_input("New group name", "Alternative conditions", help="A label for the new set of conditions.")
+            logic = st.selectbox("New group logic", ["AND", "OR"], help="AND requires all children; OR requires any passing child.")
             parent = st.selectbox("Place inside", [g.id for g in config.groups],
-                                  format_func=lambda v: next(g.name for g in config.groups if g.id == v))
+                                  format_func=lambda v: next(g.name for g in config.groups if g.id == v),
+                                  help="Choose the parent group that will contain this new group.")
             if st.form_submit_button("Add nested group"):
                 config.groups.append(Group(id=uid("g"), name=name, logic=logic, parent=parent))
                 st.rerun()
@@ -317,15 +350,16 @@ def rule_editor(config: ScreenConfig, rule: Rule, relationships: bool = False):
     options = [m.key for m in config.moving_averages if m.enabled]
     if relationships:
         options = ["PRICE", *options]
-    label = f"{'●' if rule.enabled else '○'} {rule.name} · {rule.ma}"
+    label = f"{'●' if rule.enabled else '○'} {rule.name} · {series_label(rule.ma)}"
     with st.expander(label, expanded=len(config.rules) <= 1):
         top = st.columns([3, 1, 1, 1])
-        rule.name = top[0].text_input("Rule name", rule.name, key=key(prefix + "name"))
-        rule.enabled = top[1].checkbox("Enabled", value=rule.enabled, key=key(prefix + "enabled"))
-        if top[2].button("Duplicate", key=key(prefix + "duplicate")):
+        rule.name = top[0].text_input("Rule name", rule.name, key=key(prefix + "name"), help=CONTROL_HELP["name"])
+        rule.enabled = top[1].checkbox("Enabled", value=rule.enabled, key=key(prefix + "enabled"),
+                                       help=CONTROL_HELP["enabled"])
+        if top[2].button("Duplicate", key=key(prefix + "duplicate"), help=CONTROL_HELP["duplicate"]):
             config.rules.append(replace(rule, id=uid(), name=rule.name + " (copy)"))
             st.rerun()
-        if top[3].button("Remove", key=key(prefix + "remove")):
+        if top[3].button("Remove", key=key(prefix + "remove"), help=CONTROL_HELP["remove"]):
             config.rules = [r for r in config.rules if r.id != rule.id]
             st.rerun()
         if not options or (relationships and len(options) < 2):
@@ -335,13 +369,13 @@ def rule_editor(config: ScreenConfig, rule: Rule, relationships: bool = False):
         # Keep invalid references visible until the user explicitly resolves them.
         ma_options = options if rule.ma in options else [rule.ma, *options]
         rule.ma = cols[0].selectbox("Series / MA", ma_options, index=ma_options.index(rule.ma),
-                                    key=key(prefix + "ma"))
+                                    key=key(prefix + "ma"), format_func=series_label, help=CONTROL_HELP["ma"])
         method_options = [m for m in METHODS if (m in RELATION_METHODS) == relationships]
         old_method = rule.method
         rule.method = cols[1].selectbox(
             "Trend method" if not relationships else "Relationship",
             method_options, index=default_option(method_options, rule.method),
-            format_func=lambda v: METHODS[v], key=key(prefix + "method"),
+            format_func=lambda v: METHODS[v], key=key(prefix + "method"), help=CONTROL_HELP["method"],
         )
         if rule.method != old_method:
             rule.operator = "==" if rule.method in BOOL_METHODS else ">"
@@ -350,24 +384,35 @@ def rule_editor(config: ScreenConfig, rule: Rule, relationships: bool = False):
                 rule.threshold, rule.operator = 80.0, ">="
             for name, value in (("operator", rule.operator), ("threshold", rule.threshold)):
                 st.session_state[key(prefix + name)] = value
+        description, example, threshold_help = METHOD_HELP[rule.method]
+        st.caption(description)
+        st.caption("Example: " + example)
         if relationships:
             other_options = [m.key for m in config.moving_averages if m.enabled]
             if not other_options:
                 st.warning("Enable a comparison moving average first.")
                 return
             rule.other = st.selectbox("Compare with MA", other_options,
-                                      index=default_option(other_options, rule.other), key=key(prefix + "other"))
+                                      index=default_option(other_options, rule.other), key=key(prefix + "other"),
+                                      format_func=series_label, help=CONTROL_HELP["other"])
             st.caption("Difference = 100 × (left / right − 1). Positive means the left line is above the right. "
                        "Absolute separation uses the magnitude of this difference.")
         minimum = 2 if rule.method in REGRESSION_METHODS else 1
         unit = "observations" if rule.method in REGRESSION_METHODS else "daily transitions"
+        if rule.method == "relative":
+            rule.lookback, unit = 1, "latest observation only"
+            st.session_state[key(prefix + "lookback")] = 1
         cols = st.columns(3)
         rule.lookback = int(cols[0].number_input(f"Lookback ({unit})", min_value=minimum,
                                                 value=max(minimum, rule.lookback), step=1,
-                                                key=key(prefix + "lookback")))
+                                                key=key(prefix + "lookback"), disabled=rule.method == "relative",
+                                                help=lookback_help(rule.method)))
         rule.operator = cols[1].selectbox("Comparison", list(OPERATORS),
                                           index=default_option(list(OPERATORS), rule.operator),
-                                          key=key(prefix + "operator"))
+                                          key=key(prefix + "operator"),
+                                          help="Compare the calculated metric with the threshold: > greater than, "
+                                               ">= at least, < less than, <= at most, == equal, != not equal. "
+                                               "For Turning up, the boolean result is compared with 1.")
         threshold_label = "Threshold"
         if rule.method == "turn_up":
             threshold_label = "Minimum positive slope (% / session)"
@@ -375,51 +420,80 @@ def rule_editor(config: ScreenConfig, rule: Rule, relationships: bool = False):
             threshold_label = "Threshold (%)"
         elif rule.method == "normalized_slope":
             threshold_label = "Threshold (% / session)"
-        elif rule.method.startswith("accel_") or rule.method == "separation_change":
+        elif rule.method == "accel_slope":
+            threshold_label = "Threshold (pp / session)"
+        elif rule.method == "accel_pct" or rule.method == "separation_change":
             threshold_label = "Threshold (percentage points)"
+        elif rule.method == "slope":
+            threshold_label = "Threshold (price units / session)"
+        elif rule.method == "r2":
+            threshold_label = "Threshold (R-squared, 0–1)"
+        elif rule.method in {"positive_count", "negative_count", "longest_streak"}:
+            threshold_label = "Threshold (transition count)"
         elif rule.method in BOOL_METHODS:
             threshold_label = "Boolean target (true=1)"
         rule.threshold = float(cols[2].number_input(threshold_label, value=float(rule.threshold),
-                                                    step=0.01, format="%.6f", key=key(prefix + "threshold")))
+                                                    step=0.01, format="%.6f", key=key(prefix + "threshold"),
+                                                    help=threshold_help))
+        cols[0].caption(lookback_help(rule.method))
+        cols[1].caption(f"{rule.operator} means {OPERATOR_HELP[rule.operator]}. "
+                        + ("The turning-up result is compared with 1." if rule.method == "turn_up"
+                           else "The calculated value is compared with your threshold."))
+        cols[2].caption(threshold_help)
         if rule.method == "relative":
             rule.lookback = 1
         if rule.method == "turn_up":
             c = st.columns(3)
             rule.reversal_lag = int(c[0].number_input(
                 "Previous slope evaluated how many sessions ago?", min_value=1,
-                value=rule.reversal_lag, step=1, key=key(prefix + "lag")))
+                value=rule.reversal_lag, step=1, key=key(prefix + "lag"), help=CONTROL_HELP["lag"]))
             rule.confirmation = int(c[1].number_input(
                 "Consecutive positive slope evaluations", min_value=1,
-                value=rule.confirmation, step=1, key=key(prefix + "confirmation")))
+                value=rule.confirmation, step=1, key=key(prefix + "confirmation"), help=CONTROL_HELP["confirmation"]))
             rule.allow_flat = c[2].checkbox("Allow previous slope to be flat", value=rule.allow_flat,
-                                            key=key(prefix + "allow_flat"))
+                                            key=key(prefix + "allow_flat"), help=CONTROL_HELP["allow_flat"])
+            c[0].caption("Use the slope from exactly this many trading sessions earlier.")
+            c[1].caption("Count includes today; each slope must exceed the minimum. Must be ≤ the lag.")
+            c[2].caption("Ticked: earlier slope ≤ 0. Unticked: earlier slope < 0.")
             st.caption("The current and confirmation slopes must exceed the minimum above. "
                        "Comparison applies to the turning-up boolean against 1; choose == for turning-up matches.")
         if rule.method in {"accel_pct", "accel_slope"}:
             c = st.columns(2)
             rule.positive_current = c[0].checkbox("Require current rate to be positive",
-                                                 value=rule.positive_current, key=key(prefix + "pos_current"))
+                                                 value=rule.positive_current, key=key(prefix + "pos_current"),
+                                                 help=CONTROL_HELP["pos_current"])
             rule.positive_previous = c[1].checkbox("Require previous rate to be positive",
-                                                  value=rule.positive_previous, key=key(prefix + "pos_previous"))
+                                                  value=rule.positive_previous, key=key(prefix + "pos_previous"),
+                                                  help=CONTROL_HELP["pos_previous"])
+            c[0].caption("The latest change or slope must also be > 0.")
+            c[1].caption("The preceding change or slope must also be > 0; untick to allow a declining earlier trend.")
             st.caption("Acceleration compares recent history with preceding history; it is not a forecast.")
         group_ids = [g.id for g in config.groups]
         rule.group = st.selectbox("Rule group", group_ids, index=default_option(group_ids, rule.group),
                                    format_func=lambda v: next(g.name for g in config.groups if g.id == v),
-                                   key=key(prefix + "group"))
+                                   key=key(prefix + "group"), help=CONTROL_HELP["group"])
+        selected_group = next(g for g in config.groups if g.id == rule.group)
+        st.caption(f"This rule belongs to {selected_group.name}: "
+                   + ("all conditions in this group must pass." if selected_group.logic == "AND"
+                      else "any passing condition in this group is enough."))
         if not relationships:
             c = st.columns(2)
             use_r2 = c[0].checkbox("Also require minimum R-squared", value=rule.min_r2 is not None,
-                                    key=key(prefix + "use_r2"))
+                                    key=key(prefix + "use_r2"), help=CONTROL_HELP["use_r2"])
             r2 = c[0].number_input("Minimum R-squared", min_value=0.0, max_value=1.0,
                                     value=rule.min_r2 if rule.min_r2 is not None else 0.8, step=0.01,
-                                    disabled=not use_r2, key=key(prefix + "r2"))
+                                    disabled=not use_r2, key=key(prefix + "r2"), help=CONTROL_HELP["r2"])
+            c[0].caption("Optional linear-fit consistency requirement: 0.80 means 80% explained variation. "
+                         "A high R-squared can describe either an upward or downward line.")
             rule.min_r2 = float(r2) if use_r2 else None
             use_positive = c[1].checkbox("Also require mostly rising", value=rule.min_positive_pct is not None,
-                                          key=key(prefix + "use_positive"))
+                                          key=key(prefix + "use_positive"), help=CONTROL_HELP["use_positive"])
             positive = c[1].number_input(
                 "Minimum positive transitions (%)", min_value=0.0, max_value=100.0,
                 value=rule.min_positive_pct if rule.min_positive_pct is not None else 80.0,
-                step=1.0, disabled=not use_positive, key=key(prefix + "positive"))
+                step=1.0, disabled=not use_positive, key=key(prefix + "positive"), help=CONTROL_HELP["positive"])
+            c[1].caption("Optional daily-rise requirement: 80 means 80% positive transitions. Flat changes "
+                         "do not count as positive. Uses the latest component for acceleration/turning rules.")
             rule.min_positive_pct = float(positive) if use_positive else None
         st.info(window_description(rule))
         if rule.method in {"normalized_slope", "slope", "r2"}:
@@ -465,7 +539,7 @@ def relationship_builder(config):
         options = [m.key for m in sorted(config.moving_averages, key=lambda m: (m.period, m.kind)) if m.enabled]
         alignment = st.selectbox("Alignment direction", ["Bullish", "Bearish"], key=key("alignment_direction"))
         selected = st.multiselect("MAs in shortest-to-longest order", options, default=options,
-                                  key=key("alignment_mas"))
+                                  key=key("alignment_mas"), format_func=series_label)
         if st.button("Add alignment group", key=key("add_alignment")):
             if len(selected) < 2:
                 st.warning("Choose at least two moving averages.")
@@ -543,8 +617,8 @@ def run_screen(config: ScreenConfig, settings):
             raise ValueError("Complete the custom date range")
         if settings["display_start"] > settings["screen_date"]:
             raise ValueError("History start must precede the effective screen date")
-        if settings["force"] and settings["cache_only"]:
-            raise ValueError("Turn off cached-prices-only mode to force a refresh")
+        if (settings["force"] or settings.get("refresh_now")) and settings["cache_only"]:
+            raise ValueError("Turn off Saved prices only before updating prices")
         snapshot_config = ScreenConfig.from_dict(config.to_dict(), require_rules=True)
         progress = st.progress(0.0, text="Resolving stock universe…")
         universe = resolve_universe(settings)
@@ -555,24 +629,26 @@ def run_screen(config: ScreenConfig, settings):
             *universe.ticker.tolist(), *([snapshot_config.risk.benchmark] if snapshot_config.risk.enabled else [])]))
         data_key = (settings["source"], settings["cache_only"], tuple(download_tickers),
                     tuple(sorted(settings["ticker_aliases"].items())), str(start), str(end))
-        reuse = (not settings["force"] and not settings["retry_missing"]
-                 and st.session_state.get("data_key") == data_key
-                 and time.time() - st.session_state.get("data_loaded_at", 0) < 6 * 3600)
+        reuse = (not settings["force"] and not settings["retry_missing"] and not settings.get("refresh_now", False)
+                 and st.session_state.get("data_key") == data_key)
         if reuse:
             batch = st.session_state.raw_batch
             progress.progress(0.55, text="Reusing loaded prices; applying new rules…")
+            downloads = []
         else:
             provider = AliasedProvider(DemoProvider() if settings["demo"] else YFinanceProvider(),
                                        settings["ticker_aliases"])
             def downloaded(done, total):
                 progress.progress(0.05 + 0.5 * done / max(total, 1),
-                                  text=f"Loading prices: {done} / {total}")
+                                  text=f"Downloading prices: {done} / {total}")
+            progress.progress(0.05, text="Checking saved prices before requesting missing data…")
             batch = PriceCache(home() / "prices", provider).get_many(
                 download_tickers, start, end, force=settings["force"],
-                refresh_recent=settings["time_mode"] == "Latest completed session",
-                cache_only=settings["cache_only"] and not settings["demo"], progress=downloaded,
+                refresh_recent=False, refresh_now=settings.get("refresh_now", False),
+                cache_only=settings["cache_only"], progress=downloaded,
                 retry_missing=settings["retry_missing"],
             )
+            downloads = batch.downloads
             st.session_state.raw_batch, st.session_state.data_key = batch, data_key
             st.session_state.data_loaded_at = time.time()
             st.session_state.indicator_cache = {}
@@ -584,6 +660,12 @@ def run_screen(config: ScreenConfig, settings):
                      risk_cache=st.session_state.setdefault("risk_cache", {}), progress=analyzed)
         st.session_state.run = run
         st.session_state.run_batch = batch
+        st.session_state.run_price_activity = {
+            "source": "In-memory saved prices" if reuse else "Local price cache",
+            "downloads": downloads,
+            "symbols_requested": len({t for request in downloads for t in request["tickers"]}),
+            "action": "Update prices & run" if settings.get("refresh_now") or settings["force"] else "Run Screen",
+        }
         st.session_state.run_universe_snapshot = st.session_state.get("universe_snapshot")
         st.session_state.run_settings = settings.copy()
         st.session_state.run_config_json = config.to_json()
@@ -597,6 +679,8 @@ def run_screen(config: ScreenConfig, settings):
             st.warning(f"Screen completed, but its local history snapshot could not be saved: {exc}")
         progress.empty()
         st.success(f"Screen complete: {run.summary()['passing']} of {len(run.table)} stocks matched on {end}.")
+        if not downloads:
+            st.caption("Used saved prices. No price downloads were requested.")
     except (ValueError, RuntimeError, OSError, TimeoutError) as exc:
         st.error(f"Screen could not complete: {exc}")
 
@@ -654,6 +738,18 @@ def results_panel(run: ScreenRun, display_start):
         col.metric(label, f"{summary[name]:.1f}" if name.endswith("pct") else summary[name])
     st.caption("Analyzed means the root AND/OR expression can be decided. Missing rules are unavailable, "
                "never passing. A decidable OR may pass despite another unavailable branch.")
+    activity = st.session_state.get("run_price_activity")
+    if activity:
+        if activity["downloads"]:
+            st.caption(f"{activity['action']}: requested prices for {activity['symbols_requested']} symbols. "
+                       "Existing saved history was reused where possible; failures appear in Data diagnostics.")
+            with st.expander("Price download activity"):
+                st.dataframe(pd.DataFrame([{
+                    "Reason": item["reason"], "Start": item["start"], "End": item["end"],
+                    "Symbols": ", ".join(item["tickers"]),
+                } for item in activity["downloads"]]), hide_index=True, width="stretch")
+        else:
+            st.caption(f"Price source: {activity['source']}. No price downloads were requested for this screen.")
     batch = st.session_state.get("run_batch")
     if batch:
         stamps = [m.get("last_success") for m in batch.metadata.values() if m.get("last_success")]
@@ -876,7 +972,7 @@ def research_panel(run):
         with st.spinner("Loading separate forward outcomes…"):
             try:
                 data = PriceCache(home() / "prices", provider).get_many(
-                    table.ticker.tolist(), run.screen_date, latest, refresh_recent=True,
+                    table.ticker.tolist(), run.screen_date, latest, refresh_recent=False,
                     cache_only=st.session_state.run_settings["cache_only"],
                 )
                 st.session_state.forward_table = forward_returns(data.frames, run.screen_date, latest)
@@ -904,11 +1000,16 @@ def main():
     header_slot = st.empty()
     settings = settings_panel(config)
     with st.container(border=True, key="run_toolbar"):
-        left, right = st.columns([1, 3])
-        run_clicked = left.button("Run Screen", type="primary", width="stretch", key="run_screen")
+        left, update, right = st.columns([1, 1.3, 2.7])
+        run_clicked = left.button("Run Screen", type="primary", width="stretch", key="run_screen",
+                                    help="Reuse saved prices; download only missing histories/ranges unless Saved prices only is selected.")
+        update_clicked = update.button("Update prices & run", width="stretch", key="update_prices",
+                                         disabled=settings["cache_only"],
+                                         help="Refresh existing prices using the sidebar update scope, repair missing data, "
+                                              "then apply the draft screen. Turn off Saved prices only to enable this.")
         right.markdown('<p class="lab-toolbar-title">Your screen, ready when you are.</p>'
-                       '<p class="lab-toolbar-copy">Configure the builder, then apply. '
-                       'Charts and results keep the last completed screen.</p>', unsafe_allow_html=True)
+                       '<p class="lab-toolbar-copy">Run Screen reuses saved prices. '
+                       'Update prices &amp; run explicitly refreshes them.</p>', unsafe_allow_html=True)
     build, results, explorer, performance, grid, presets, research, history = st.tabs(
         ["Build screen", "Results", "Stock explorer", "Risk & performance",
          "Chart grid", "Saved presets", "Historical research", "Screen history"])
@@ -917,8 +1018,9 @@ def main():
     # Config name changes in presets are included before execution and the draft fingerprint.
     with presets:
         presets_panel(config)
-    if run_clicked:
-        run_screen(config, settings)
+    if run_clicked or update_clicked:
+        run_screen(config, {**settings, "refresh_now": update_clicked, "retry_missing": update_clicked,
+                            "force": update_clicked and settings["price_update_scope"] == "Full price history"})
     run = st.session_state.get("run")
     applied = st.session_state.run_settings if run is not None else settings
     with history:
