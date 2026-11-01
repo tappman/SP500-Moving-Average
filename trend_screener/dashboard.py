@@ -37,7 +37,7 @@ from .rule_help import (
 from .risk import RISK_METRICS, risk_column_label, sharpe_help, sharpe_label
 from .risk_dashboard import performance_panel, risk_settings_panel
 from .research_dashboard import history_panel, portfolio_panel, research_lab
-from .universe import UniverseService, custom_universe, parse_tickers, provider_symbol
+from .universe import UniverseService, custom_universe, known_not_yet_trading, parse_tickers, provider_symbol
 from .appearance import (
     apply_workspace_style, context_strip, empty_state, sidebar_brand, show_figure, workspace_header,
 )
@@ -707,9 +707,21 @@ def run_screen(config: ScreenConfig, settings):
         universe = resolve_universe(settings)
         universe["provider_ticker"] = universe.ticker.map(lambda t: settings["ticker_aliases"].get(t, t))
         end, display_start = settings["screen_date"], settings["display_start"]
+        # Today's S&P 500 roster can include companies that did not trade on a
+        # historical screen date. Preserve them as INSUFFICIENT, rather than
+        # fetching impossible pre-listing history and reporting provider errors.
+        prelisting = ({} if settings["demo"] else known_not_yet_trading(
+            universe.ticker.tolist(), end, settings["ticker_aliases"]))
+        if prelisting:
+            universe["listing_note"] = universe.ticker.map(
+                lambda t: f"Not yet trading on {end}; first regular session {prelisting[t]}"
+                if t in prelisting else "")
         start = history_start(display_start, end, snapshot_config.required_history())
-        download_tickers = list(dict.fromkeys([
-            *universe.ticker.tolist(), *([snapshot_config.risk.benchmark] if snapshot_config.risk.enabled else [])]))
+        requested_tickers = [
+            *universe.ticker.tolist(),
+            *([snapshot_config.risk.benchmark] if snapshot_config.risk.enabled else []),
+        ]
+        download_tickers = list(dict.fromkeys(t for t in requested_tickers if t not in prelisting))
         data_key = (settings["source"], settings["cache_only"], tuple(download_tickers),
                     tuple(sorted(settings["ticker_aliases"].items())), str(start), str(end))
         # Retry previously failed symbols instead of permanently reusing an
@@ -746,6 +758,11 @@ def run_screen(config: ScreenConfig, settings):
                      indicator_cache=st.session_state.setdefault("indicator_cache", {}),
                      risk_cache=st.session_state.setdefault("risk_cache", {}), progress=analyzed)
         run.table = batch.annotate_results(run.table, snapshot_config.risk.benchmark if snapshot_config.risk.enabled else None)
+        for ticker, first_day in prelisting.items():
+            mask = run.table.ticker.eq(ticker)
+            note = f"Not yet trading on {end}; first regular session {first_day}"
+            run.table.loc[mask, "data_notes"] = run.table.loc[mask, "data_notes"].map(
+                lambda existing: note + (f" | {existing}" if isinstance(existing, str) and existing else ""))
         st.session_state.run = run
         st.session_state.run_batch = batch
         st.session_state.run_price_activity = {
@@ -766,6 +783,13 @@ def run_screen(config: ScreenConfig, settings):
         except (OSError, sqlite3.Error) as exc:
             st.warning(f"Screen completed, but its local history snapshot could not be saved: {exc}")
         st.success(f"Screen complete: {run.summary()['passing']} of {len(run.table)} stocks matched on {end}.")
+        if prelisting:
+            tickers_with_dates = ", ".join(f"{ticker} (listed {first})"
+                                           for ticker, first in prelisting.items())
+            st.info(f"Not yet trading on {end}: {tickers_with_dates}. "
+                    "These stocks remain in results as INSUFFICIENT, with no "
+                    "pre-listing Yahoo download attempts. Current S&P 500 members "
+                    "are not a historical membership list.")
         if batch.errors:
             st.warning(f"Price-data issues for {len(batch.errors)} symbols. Saved prices were retained where "
                        "available; an update may be incomplete. See Results → Data diagnostics. "
