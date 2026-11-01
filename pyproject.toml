@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sp500-trend-screener"
-version = "1.2.3"
+version = "1.2.4"
 description = "Configurable moving-average research dashboard with auditable trend rules"
 requires-python = ">=3.11"
 dynamic = ["dependencies"]

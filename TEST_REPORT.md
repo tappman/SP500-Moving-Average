@@ -2,7 +2,8 @@
 
 Original release verification date: October 31, 2026 (America/New_York). Python 3.12.14.
 
-**Latest combined-builder/stock-groups update (version 1.2.3): 195 tests passed.**
+**Latest selected-method tooltip update (version 1.2.4): 19 focused UI tests passed.**
+Most recent complete suite: version 1.2.3, **195 tests passed**.
 
 The original release results below are retained as history. Risk/performance and UI update verification follow at the end.
 
@@ -355,3 +356,28 @@ No new live Yahoo download or native browser pixel review was performed for this
 update. Physical table clicks/sorting and platform dialogs remain unverified in
 a browser; serialized widget edits, resulting table values, persistent storage,
 Plotly creation and calculation workflows were verified in the local runtime.
+
+## Detailed selected-method tooltips — November 1, 2026
+
+Version 1.2.4 replaces the generic Trend method question-mark text with a detailed
+explanation of the selected method. Each tooltip includes its purpose, formula,
+lookback convention, threshold units, numerical worked example, comparison
+examples, interpretation and relevant limits. All 14 trend methods and four
+relationship methods are covered. Existing visible explanations remain available.
+
+The tooltip reads the pending selector value so it changes on the same rerun
+as the user's selection, rather than one interaction later. Each rule has its
+own selector/help state.
+
+Verification: **19 focused Streamlit tests passed in 35.30 seconds**, comprising
+the 14 trend-method cases, four relationship cases and an additional immediate
+switching/independent-rule case. Checks assert that the actual widget help has
+the selected method's title, calculation, worked example and interpretation
+sections immediately after selection. The switching case also verifies that
+another rule's help and the applied screen remain unchanged. Ruff and Python
+compilation passed. This tooltip-only update did not rerun the full numerical
+suite; the previous full 195-test result above is retained with its version.
+
+Physical browser hover/popup layout was not verified; these checks exercise the
+actual Streamlit script/widget help payload. No new live-market retrieval was
+performed for this update.

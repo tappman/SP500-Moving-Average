@@ -30,7 +30,9 @@ from .presets import PresetStore, builtins
 from .providers import AliasedProvider, YFinanceProvider
 from .research import forward_returns
 from .rules import window_description
-from .rule_help import CONTROL_HELP, MA_TYPES, METHOD_HELP, OPERATOR_HELP, lookback_help, series_label
+from .rule_help import (
+    CONTROL_HELP, MA_TYPES, METHOD_HELP, OPERATOR_HELP, lookback_help, method_tooltip, series_label,
+)
 from .risk import RISK_METRICS, risk_column_label
 from .risk_dashboard import performance_panel, risk_settings_panel
 from .research_dashboard import history_panel, portfolio_panel, research_lab
@@ -414,10 +416,12 @@ def rule_editor(config: ScreenConfig, rule: Rule, relationships: bool = False):
                                     args=(rule, key(prefix + "ma")))
         method_options = [m for m in METHODS if (m in RELATION_METHODS) == relationships]
         old_method = rule.method
+        # Read the pending widget value so its help updates on the same rerun as the selection.
+        selected_method = st.session_state.get(key(prefix + "method"), rule.method)
         rule.method = cols[1].selectbox(
             "Trend method" if not relationships else "Relationship",
             method_options, index=default_option(method_options, rule.method),
-            format_func=lambda v: METHODS[v], key=key(prefix + "method"), help=CONTROL_HELP["method"],
+            format_func=lambda v: METHODS[v], key=key(prefix + "method"), help=method_tooltip(selected_method),
         )
         if rule.method != old_method:
             rule.operator = "==" if rule.method in BOOL_METHODS else ">"

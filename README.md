@@ -72,6 +72,14 @@ consistency filters. The MA type selector spells out **SMA — Simple moving
 average** and **EMA — Exponential moving average**. Saved JSON and calculation
 columns keep the stable `SMA`/`EMA` codes, such as `SMA20` and `EMA20`.
 
+The question mark beside **Trend method** now explains the selected method in
+depth: what it measures, its formula, the exact lookback convention, threshold
+units, a numerical worked example with passing/failing comparisons, example
+settings, and interpretation/limitations. It updates as soon as you change the
+method, independently for each rule; no Run Screen or data download is needed.
+The **Relationship** selector has the same method-specific detail for line
+comparisons and crossovers.
+
 For “MA20 increased on at least 8 of the last 10 days,” choose **Positive transition count**, lookback **10**, comparison **>=**, threshold **8**. This requires **11 MA observations**. Combine it with a positive-slope rule, or use the regression rule's **Also require mostly rising** control.
 
 ## Dashboard features

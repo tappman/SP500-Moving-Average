@@ -11,6 +11,7 @@ from streamlit.testing.v1 import AppTest
 from trend_screener import dashboard
 from trend_screener.cache import PriceCache
 from trend_screener.presets import builtins
+from trend_screener.models import METHODS
 
 
 @pytest.fixture
@@ -117,6 +118,9 @@ def test_relationship_settings_are_explained_and_latest_only_lookback_is_clear(l
     prefix = f"v0_rule_{rule.id}_"
     app.selectbox(key=prefix + "method").select(method).run()
     assert not app.exception and not app.error
+    tooltip = app.selectbox(key=prefix + "method").proto.help
+    assert tooltip.startswith(f"**{METHODS[method]}**")
+    assert "Worked example" in tooltip and "Interpretation and limits" in tooltip
     controls = [*app.number_input, *app.selectbox, *app.checkbox, *app.text_input, *app.button]
     assert all(w.proto.help for w in controls if w.key and w.key.startswith(prefix))
     lookback = app.number_input(key=prefix + "lookback")

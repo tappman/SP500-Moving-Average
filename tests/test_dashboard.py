@@ -144,12 +144,30 @@ def test_duplicate_disable_remove_and_relationship(app):
 def test_method_controls_run(app, method):
     app.selectbox(key="v0_rule_slope_20_method").select(method).run()
     assert not app.exception
+    tooltip = app.selectbox(key="v0_rule_slope_20_method").proto.help
+    assert tooltip.startswith(f"**{METHODS[method]}**")
+    assert all(section in tooltip for section in ("How it is calculated", "Worked example", "Interpretation and limits"))
     app.button(key="run_screen").click().run()
     assert not app.exception and not app.error
     assert app.session_state["run"].config.rules[1].method == method
     controls = [*app.number_input, *app.selectbox, *app.checkbox, *app.text_input, *app.button]
     assert all(w.proto.help for w in controls if w.key and w.key.startswith("v0_rule_slope_20_"))
     assert any(c.value.startswith("Example:") for c in app.caption)
+
+
+def test_method_tooltip_updates_immediately_per_rule_without_applying_screen(app):
+    app.button(key="run_screen").click().run()
+    applied = app.session_state["run"]
+    other_help = app.selectbox(key="v0_rule_slope_5_method").proto.help
+    for method, detail in (("strict", "100, 101, 100.5, 103"),
+                           ("accel_slope", "OWN window"),
+                           ("normalized_slope", "100 × raw slope / mean")):
+        app.selectbox(key="v0_rule_slope_20_method").select(method).run()
+        assert not app.exception and not app.error
+        tooltip = app.selectbox(key="v0_rule_slope_20_method").proto.help
+        assert tooltip.startswith(f"**{METHODS[method]}**") and detail in tooltip
+        assert app.selectbox(key="v0_rule_slope_5_method").proto.help == other_help
+        assert app.session_state["run"] is applied
 
 
 def test_preset_load_after_existing_run_invalidates_data_state_safely(app):
