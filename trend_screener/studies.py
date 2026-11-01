@@ -393,7 +393,9 @@ def parameter_neighbors(config: ScreenConfig, ma_key: str, rule_id: str):
                         if rule.other == old:
                             rule.other = ma.key
                 else:
-                    next(r for r in candidate.rules if r.id == rule_id).lookback += delta
+                    rule = next(r for r in candidate.rules if r.id == rule_id)
+                    rule.lookback_mode = "custom"
+                    rule.lookback += delta
                 candidate.validate()
                 variants.append((label, candidate, ""))
             except (ValueError, StopIteration) as exc:

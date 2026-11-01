@@ -27,5 +27,5 @@ This is a Python application with double-click launchers, not a standalone
 Windows EXE or Mac app.
 If a launcher cannot start, keep the error text and ask for help.
 
-See README.md for the full instructions and TEST_REPORT.md for tested behavior
-and platform limits.
+See README.md for controls, calculation definitions, cached-data updates and
+platform limits.

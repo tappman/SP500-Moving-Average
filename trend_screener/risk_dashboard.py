@@ -11,7 +11,7 @@ from plotly.subplots import make_subplots
 import streamlit as st
 
 from .models import ScreenConfig
-from .risk import RISK_METRICS, numeric_prices, rolling_metrics
+from .risk import RISK_METRICS, numeric_prices, rolling_metrics, sharpe_help, sharpe_label
 from .universe import provider_symbol
 from .appearance import show_figure, style_figure
 
@@ -110,7 +110,10 @@ def performance_panel(run, *, demo: bool, widget_prefix: str):
     chosen = risk.metrics[:6]
     for start in range(0, len(chosen), 3):
         for col, metric in zip(st.columns(3), chosen[start:start + 3]):
-            col.metric(RISK_METRICS[metric], _formatted(report.values[metric]))
+            is_sharpe = metric in {"sharpe", "sharpe_daily"}
+            col.metric(sharpe_label(lookback, risk, daily=metric == "sharpe_daily") if is_sharpe else RISK_METRICS[metric],
+                       _formatted(report.values[metric]),
+                       help=sharpe_help(lookback, risk, daily=metric == "sharpe_daily", report=report) if is_sharpe else None)
     rows = []
     for n in risk.lookbacks:
         r = reports[n]
@@ -121,7 +124,11 @@ def performance_panel(run, *, demo: bool, widget_prefix: str):
             "Benchmark returns available": r.benchmark_returns, "Status": r.status,
         })
     st.markdown("#### Compare lookback periods")
-    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch", column_config={
+        RISK_METRICS[m]: st.column_config.NumberColumn(
+            f"{'Annualized' if m == 'sharpe' else 'Daily'} Sharpe · {risk.risk_free_pct:g}% annual risk-free",
+            help="\n\n---\n\n".join(sharpe_help(n, risk, daily=m == "sharpe_daily") for n in risk.lookbacks),
+            format="%.4f") for m in risk.metrics if m in {"sharpe", "sharpe_daily"}})
     st.download_button("Download this stock's risk metrics", pd.DataFrame(rows).to_csv(index=False),
                         file_name=f"{ticker}_{run.screen_date}_risk.csv", mime="text/csv",
                         key=widget_prefix + "_download")
@@ -160,7 +167,9 @@ def performance_panel(run, *, demo: bool, widget_prefix: str):
                                   name=f"{ticker}: {lookback}-return window", line={"color": "#0D9488"}))
         if metric != "volatility_ann_pct":
             fig.add_hline(y=0, line_color="#94A3B8", line_dash="dot")
-        fig.update_layout(title=f"Rolling {RISK_METRICS[metric]}", template="plotly_white",
+        if metric == "sharpe":
+            st.subheader(sharpe_label(lookback, risk), help=sharpe_help(lookback, risk))
+        fig.update_layout(title=f"Rolling {sharpe_label(lookback, risk) if metric == 'sharpe' else RISK_METRICS[metric]}", template="plotly_white",
                           yaxis_title=RISK_METRICS[metric], height=420, hovermode="x unified")
         show_figure(style_figure(fig), key=widget_prefix + "_rolling_plot")
         if finite < 2:

@@ -13,7 +13,8 @@ import pandas as pd
 import streamlit as st
 
 from .cache import PriceCache
-from .builder import rename_references, sync_averages
+from .builder import new_trend_rule, rename_references, sync_averages
+from .lookbacks import suggested_ema_lookback, supports_auto_lookback
 from .collections import StockGroups, apply_selection_edits, selection_signature
 from .calendar import history_start, latest_completed_session, sessions
 from .charts import information_panel, price_chart
@@ -33,7 +34,7 @@ from .rules import window_description
 from .rule_help import (
     CONTROL_HELP, MA_TYPES, METHOD_HELP, OPERATOR_HELP, lookback_help, method_tooltip, series_label,
 )
-from .risk import RISK_METRICS, risk_column_label
+from .risk import RISK_METRICS, risk_column_label, sharpe_help, sharpe_label
 from .risk_dashboard import performance_panel, risk_settings_panel
 from .research_dashboard import history_panel, portfolio_panel, research_lab
 from .universe import UniverseService, custom_universe, parse_tickers, provider_symbol
@@ -316,7 +317,7 @@ def moving_average_builder(config: ScreenConfig) -> None:
         previous = [asdict(m) for m in config.moving_averages]
         changed = sync_averages(config, averages, mapping, added)
         for rule in changed.values():
-            for field in ("ma", "other", "name", "enabled"):
+            for field in ("ma", "other", "name", "enabled", "lookback"):
                 st.session_state[key(f"rule_{rule.id}_{field}")] = getattr(rule, field)
         st.session_state["ma_error"] = ""
         if previous != [asdict(m) for m in averages]:
@@ -449,14 +450,32 @@ def rule_editor(config: ScreenConfig, rule: Rule, relationships: bool = False):
                        "Absolute separation uses the magnitude of this difference.")
         minimum = 2 if rule.method in REGRESSION_METHODS else 1
         unit = "observations" if rule.method in REGRESSION_METHODS else "daily transitions"
+        automatic = False
+        if supports_auto_lookback(rule):
+            rule.lookback_mode = st.radio(
+                "Trend lookback mode", ["auto", "custom"],
+                index=default_option(["auto", "custom"], rule.lookback_mode),
+                format_func=str.title, horizontal=True, key=key(prefix + "lookback_mode"),
+                help="Auto interpolates the suggested EMA regression lookback from reference values. "
+                     "Custom lets you choose any valid observation count. Suggestions are usability starting "
+                     "points, not scientifically optimized settings or reliable-trend guarantees.")
+            suggested = suggested_ema_lookback(int(rule.ma[3:]))
+            st.caption(f"Suggested: {rule.ma} → {suggested}-observation regression. "
+                       "Illustrative starting point; short EMAs can remain noisy. Use historical research "
+                       "to compare windows for your holding period.")
+            automatic = rule.lookback_mode == "auto"
+            if automatic:
+                rule.apply_auto_lookback()
+                st.session_state[key(prefix + "lookback")] = rule.lookback
         if rule.method == "relative":
             rule.lookback, unit = 1, "latest observation only"
             st.session_state[key(prefix + "lookback")] = 1
         cols = st.columns(3)
-        rule.lookback = int(cols[0].number_input(f"Lookback ({unit})", min_value=minimum,
-                                                value=max(minimum, rule.lookback), step=1,
-                                                key=key(prefix + "lookback"), disabled=rule.method == "relative",
-                                                help=lookback_help(rule.method)))
+        entered_lookback = cols[0].number_input(f"Lookback ({unit})", min_value=minimum,
+                                                value=None if key(prefix + "lookback") in st.session_state else max(minimum, rule.lookback), step=1,
+                                                key=key(prefix + "lookback"), disabled=rule.method == "relative" or automatic,
+                                                help=lookback_help(rule.method))
+        rule.lookback = int(entered_lookback) if entered_lookback is not None else 0
         rule.operator = cols[1].selectbox("Comparison", list(OPERATORS),
                                           index=default_option(list(OPERATORS), rule.operator),
                                           key=key(prefix + "operator"),
@@ -567,7 +586,7 @@ def build_panel(config):
             for rule in [r for r in config.rules if r.ma == ma.key and r.method not in RELATION_METHODS]:
                 rule_editor(config, rule)
             if st.button(f"Add condition for {ma.key}", key=key(f"add_condition_{ma.key}"), disabled=not ma.enabled):
-                config.rules.append(Rule(name=f"{ma.key} slope positive", ma=ma.key))
+                config.rules.append(new_trend_rule(ma.key))
                 st.rerun()
         detached = [r for r in config.rules if r.ma not in {m.key for m in config.moving_averages}
                     and r.method not in RELATION_METHODS]
@@ -577,7 +596,7 @@ def build_panel(config):
                 rule_editor(config, rule)
         options = [m.key for m in config.moving_averages if m.enabled]
         if st.button("Add trend rule", key=key("add_trend"), disabled=not options):
-            config.rules.append(Rule(name=f"{options[0]} slope positive", ma=options[0]))
+            config.rules.append(new_trend_rule(options[0]))
             st.rerun()
     with relationships:
         relationship_builder(config)
@@ -913,8 +932,13 @@ def results_panel(run: ScreenRun, display_start):
                                                                          help="Keep this stock in your selection; ticking another stock keeps earlier choices."),
                               **table_column_formats(),
                               **{
-                              name: st.column_config.NumberColumn(table_column_label(name),
-                                                                   help=risk_column_label(name), format="%.4f")
+                              name: st.column_config.NumberColumn(
+                                  sharpe_label(int(name.split("_")[1]), run.config.risk,
+                                               daily=name.endswith("_daily"))
+                                  if name.endswith(("_sharpe", "_sharpe_daily")) else table_column_label(name),
+                                  help=sharpe_help(int(name.split("_")[1]), run.config.risk,
+                                                   daily=name.endswith("_daily"))
+                                  if name.endswith(("_sharpe", "_sharpe_daily")) else risk_column_label(name), format="%.4f")
                               for name in visible if any(name == f"risk_{n}_{m}"
                                                         for n in run.config.risk.lookbacks for m in RISK_METRICS)}},
                           key=editor_key, on_change=result_selection_changed, args=(editor_key, table.ticker.tolist()))

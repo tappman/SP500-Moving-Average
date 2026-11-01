@@ -39,6 +39,33 @@ DEFAULT_RISK_METRICS = [
     "sharpe", "sortino", "beta", "alpha_ann_pct",
     "volatility_ann_pct", "max_drawdown_pct", "cagr_pct",
 ]
+
+
+def sharpe_label(lookback, settings, *, daily=False):
+    name = "Daily Sharpe" if daily else "Annualized Sharpe"
+    return f"{name} — {lookback} daily returns, {settings.risk_free_pct:g}% annual risk-free rate"
+
+
+def sharpe_help(lookback, settings, *, daily=False, report=None):
+    rate = settings.daily_rate(settings.risk_free_pct)
+    formula = "mean(r − rf_daily) / sample_std(r − rf_daily, ddof=1)"
+    if not daily:
+        formula += " × √A"
+    text = (f"**Formula:** {formula}.\n\n"
+            f"**Lookback:** exactly {lookback} daily simple returns from {lookback + 1} consecutive "
+            "adjusted closes (or portfolio equity observations for a portfolio). Missing observations "
+            "are not skipped.\n\n"
+            f"**Annualization:** A = {settings.annualization} trading sessions/year. "
+            + ("Daily Sharpe has no √A multiplier. " if daily else "Multiply daily Sharpe by √A. ")
+            + f"\n\n**Risk-free assumption:** {settings.risk_free_pct:g}% effective annual rate; "
+            f"rf_daily = (1 + {settings.risk_free_pct:g}/100)^(1/{settings.annualization}) − 1 "
+            f"= {100 * rate:.8g}% per session. This is your assumption, not a live Treasury rate.\n\n"
+            "Zero volatility or an incomplete window makes Sharpe unavailable. Sharpe measures historical "
+            "excess return per unit of volatility; annualization does not correct for serial correlation.")
+    if report is not None:
+        text += (f"\n\n**Applied sample:** {report.start_date or 'unavailable'} through "
+                 f"{report.end_date or 'unavailable'}; {report.available_returns}/{lookback} valid returns.")
+    return text
 BENCHMARK_METRICS = {
     "beta", "alpha_ann_pct", "alpha_daily_pct", "information_ratio",
     "tracking_error_ann_pct", "correlation", "regression_r2",

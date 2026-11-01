@@ -19,6 +19,7 @@ def definition_hash(config):
         ma.pop("show", None)
     for rule in data["rules"]:
         rule.pop("name", None)
+        rule.pop("lookback_mode", None)  # Effective lookback, not its editor mode, defines eligibility.
     for group in data["groups"]:
         group.pop("name", None)
     settings = data["data_settings"]

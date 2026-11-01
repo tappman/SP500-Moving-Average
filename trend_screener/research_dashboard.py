@@ -20,7 +20,7 @@ from .history import HistoryStore
 from .membership import MembershipHistory
 from .portfolio import analyze_portfolio
 from .providers import AliasedProvider, YFinanceProvider
-from .risk import RISK_METRICS
+from .risk import RISK_METRICS, RiskSettings, sharpe_help, sharpe_label
 from .robustness import (
     engine_slice, evaluate_frozen_holdout, export_frozen_bundle, finite_json, freeze_study,
     import_frozen_bundle, recorded_backtest, robustness_trials,
@@ -187,6 +187,8 @@ def portfolio_panel(run, home):
     with left:
         st.dataframe(report.sectors, hide_index=True, width="stretch")
     with right:
+        st.subheader(sharpe_label(lookback, run.config.risk),
+                     help=sharpe_help(lookback, run.config.risk, report=report.risk))
         st.dataframe(pd.DataFrame([{"Metric": RISK_METRICS[m], "Value": v} for m, v in report.risk.values.items()]),
                      hide_index=True, width="stretch", height=260)
     st.dataframe(report.weights, hide_index=True, width="stretch")
@@ -234,7 +236,10 @@ def display_backtest(result, identifier, prefix):
     cols = st.columns(4)
     for col, metric in zip(cols, ("total_return_pct", "cagr_pct", "sharpe", "max_drawdown_pct")):
         value = values[metric]
-        col.metric(RISK_METRICS[metric], f"{value:.2f}" if pd.notna(value) else "Undefined")
+        settings = RiskSettings(**result.provenance.get("risk_settings", {}))
+        col.metric(sharpe_label(result.report.requested_returns, settings) if metric == "sharpe" else RISK_METRICS[metric],
+                   f"{value:.2f}" if pd.notna(value) else "Undefined",
+                   help=sharpe_help(result.report.requested_returns, settings, report=result.report) if metric == "sharpe" else None)
     research_figure(px.line(result.equity[["equity", "benchmark"]], title="Portfolio and benchmark · after assumed costs"),
                 key=prefix + "_equity")
     research_figure(px.area(result.equity[["drawdown_pct"]], title="Portfolio drawdown (%)"), key=prefix + "_drawdown")

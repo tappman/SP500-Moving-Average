@@ -10,6 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 from .risk import RiskSettings
+from .lookbacks import suggested_ema_lookback, supports_auto_lookback
 
 
 METHODS = {
@@ -81,6 +82,7 @@ class Rule:
     ma: str = "SMA20"
     method: str = "normalized_slope"
     lookback: int = 10
+    lookback_mode: str = "custom"
     operator: str = ">"
     threshold: float = 0.0
     enabled: bool = True
@@ -94,6 +96,10 @@ class Rule:
     allow_flat: bool = True
     positive_current: bool = True
     positive_previous: bool = False
+
+    def apply_auto_lookback(self):
+        if self.lookback_mode == "auto" and supports_auto_lookback(self):
+            self.lookback = suggested_ema_lookback(int(self.ma[3:]))
 
     @property
     def observation_count(self) -> int:
@@ -195,6 +201,9 @@ class ScreenConfig:
                 raise ValueError(f"Unknown group for {rule.name}")
             if rule.method not in METHODS or rule.operator not in OPERATORS:
                 raise ValueError(f"Unknown method or operator for {rule.name}")
+            if rule.lookback_mode not in {"auto", "custom"}:
+                raise ValueError("Lookback mode must be auto or custom")
+            rule.apply_auto_lookback()
             positive_int(rule.lookback, "Lookback")
             positive_int(rule.reversal_lag, "Reversal lag")
             positive_int(rule.confirmation, "Confirmation count")

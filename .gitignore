@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 .screener/
 *.egg-info/
+pytest-of-root/
