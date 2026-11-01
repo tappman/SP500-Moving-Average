@@ -130,6 +130,10 @@ class PriceCache:
     def _get_many(self, tickers, start, end, refresh_recent, force, cache_only, retry_missing, progress,
                   refresh_now=False):
         result = CachedBatch()
+        expected = sessions(start, end)
+        if expected.empty:
+            raise ValueError("No trading sessions in the requested price range")
+        last_session = expected[-1]
         stored = {t: self._read(t) for t in dict.fromkeys(tickers)}
         plans = {}
         now = datetime.now(timezone.utc)
@@ -151,6 +155,12 @@ class PriceCache:
                 stamp = datetime.fromisoformat(meta["last_success"])
                 if refresh_now or (refresh_recent and (now - stamp).total_seconds() > 6 * 3600 and end <= right):
                     spans.append((max(start, end - timedelta(days=21)), end))
+                # A failed/partial latest download may have marked its requested
+                # range as covered despite lacking the last completed session.
+                # Repair that one tail on a normal Run Screen, not the full history.
+                if (not force and not refresh_now and not retry_missing
+                        and end <= right and pd.isna(frame["adj_close"].reindex([last_session]).iloc[0])):
+                    spans.append((max(start, end - timedelta(days=14)), end))
                 if retry_missing and not frame.empty and frame.adj_close.notna().any():
                     first_valid = frame.adj_close.first_valid_index().date()
                     idx = sessions(max(start, first_valid), end)
@@ -243,7 +253,6 @@ class PriceCache:
                                           for t in remaining})
                 result.warnings.append("Network circuit breaker stopped further requests after two failed batches.")
                 break
-        expected = sessions(start, end)
         for t, (frame, meta) in stored.items():
             aligned = frame.reindex(expected)
             aligned.index.name = "date"
