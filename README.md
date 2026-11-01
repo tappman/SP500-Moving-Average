@@ -68,32 +68,6 @@ the EMA period. **Custom** unlocks the lookback so you can enter any valid windo
 Existing saved rules retain their exact lookbacks in Custom mode. Each rule has
 its own mode, and both mode and effective window are saved in presets.
 
-| EMA period | Suggested observations |
-| ---: | ---: |
-| 2 | 5 |
-| 3 | 5 |
-| 5 | 5 |
-| 7 | 6 |
-| 8 | 6 |
-| 9 | 7 |
-| 10 | 7 |
-| 12 | 8 |
-| 13 | 8 |
-| 15 | 9 |
-| 20 | 10 |
-| 25 | 10 |
-| 30 | 12 |
-| 34 | 14 |
-| 37 | 15 |
-| 50 | 20 |
-| 75 | 25 |
-| 100 | 30 |
-| 150 | 35 |
-| 200 | 40 |
-
-Other periods use piecewise linear interpolation, rounded to the nearest integer
-with halves rounded up. EMA1 uses 5 observations. Above EMA200, the final segment
-continues at one extra observation per 10 EMA periods: EMA300 suggests 50.
 Auto applies to normalized slope, raw slope and regression R-squared; other
 methods retain manually editable windows. SMA windows remain Custom.
 
