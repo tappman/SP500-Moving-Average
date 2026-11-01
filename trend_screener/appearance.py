@@ -20,7 +20,7 @@ CSS = """
 :root {--lab-ink:#16263D; --lab-muted:#5B6C80; --lab-teal:#0F766E;
        --lab-border:#DCE5EE; --lab-surface:#FFFFFF;}
 .stApp {background:#F5F7FB;}
-.block-container {max-width:1560px; padding:2.2rem 2.4rem 3rem;}
+.block-container {max-width:1560px; padding-inline:2.4rem; padding-bottom:3rem;}
 h1,h2,h3 {color:var(--lab-ink); letter-spacing:-.025em;}
 h2 {font-size:1.5rem;} h3 {font-size:1.15rem;}
 [data-testid="stCaptionContainer"] {color:var(--lab-muted); line-height:1.55;}
@@ -81,7 +81,7 @@ button:focus-visible, a:focus-visible {outline:3px solid #0F766E !important; out
 .lab-footer {color:var(--lab-muted); font-size:.73rem; border-top:1px solid var(--lab-border);
  padding-top:1rem; margin-top:2rem; line-height:1.6;}
 @media (max-width:800px) {
- .block-container {padding:1.5rem 1rem 2rem;}
+ .block-container {padding-inline:1rem; padding-bottom:2rem;}
  .lab-header {align-items:flex-start; gap:1rem; flex-wrap:wrap;}
  .lab-header h1 {font-size:1.85rem;}
  .lab-session {text-align:left; padding-left:3.65rem;}
