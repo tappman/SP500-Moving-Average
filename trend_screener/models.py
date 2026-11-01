@@ -9,6 +9,8 @@ from datetime import date
 from typing import Any
 from uuid import uuid4
 
+from .risk import RiskSettings
+
 
 METHODS = {
     "normalized_slope": "Regression: normalized slope (% / session)",
@@ -116,9 +118,11 @@ class ScreenConfig:
     price_source: str = "adj_close"
     return_kind: str = "simple"
     data_settings: dict = field(default_factory=dict)
+    risk: RiskSettings = field(default_factory=RiskSettings)
     schema_version: int = 1
 
     def validate(self, require_rules: bool = True) -> None:
+        self.risk.validate()
         if self.schema_version != 1:
             raise ValueError("Unsupported configuration schema version")
         if self.price_source not in {"adj_close", "close"}:
@@ -233,6 +237,7 @@ class ScreenConfig:
                 "moving_averages": [MovingAverage(**m) for m in data.get("moving_averages", [])],
                 "rules": [Rule(**r) for r in data.get("rules", [])],
                 "groups": [Group(**g) for g in data.get("groups", [asdict(Group())])],
+                "risk": RiskSettings(**data.get("risk", {})),
             })
             obj.validate(require_rules=require_rules)
         except (TypeError, KeyError, AttributeError, RecursionError) as exc:
@@ -251,4 +256,5 @@ class ScreenConfig:
         longest = max((r.observation_count for r in self.rules if r.enabled), default=21)
         period = max((m.period * (5 if m.kind == "EMA" else 1)
                       for m in self.moving_averages if m.enabled), default=1)
-        return max(21, period + longest + 5)
+        performance = max(self.risk.lookbacks, default=0) + 1 if self.risk.enabled else 0
+        return max(21, period + longest + 5, performance)

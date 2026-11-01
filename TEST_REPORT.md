@@ -1,6 +1,8 @@
 # Verification report
 
-Verification date: October 31, 2026 (America/New_York). Python 3.12.14.
+Original release verification date: October 31, 2026 (America/New_York). Python 3.12.14.
+
+The original release results below are retained as history. The risk/performance update verification follows at the end.
 
 ## Automated checks
 
@@ -66,3 +68,44 @@ smoke run verifies setup reuse. Mac shell syntax and Python compilation/lint
 were checked. Native Windows and macOS double-click behavior and automatic
 browser opening remain unverified in this environment. Python 3.11+ must be
 installed once before using either launcher.
+
+## Risk and performance update — November 1, 2026
+
+Version 1.1.0 adds performance settings, a dedicated stock panel, comparison
+across custom lookbacks, annualized/daily Sharpe, Sortino, excess-return beta
+and alpha, volatility, downside deviation, drawdown, Calmar, information ratio,
+tracking error, correlation, regression R-squared, CAGR and return statistics.
+The benchmark uses the existing incremental cache; settings are saved in JSON.
+Exports include the metrics, settings, source dates, observation counts and
+benchmark history. The chart grid can rank these metrics at a chosen horizon.
+
+### Executed verification
+
+- Complete suite: **120 tests passed in 43.83 seconds**, including all 78
+  original cases and 42 new parameterized mathematical and UI cases.
+- Mathematical cases use independently specified means, variances, exact
+  beta/alpha relationships and compounded returns. Coverage includes effective
+  annual risk-free conversion, custom Sortino targets, downside normalization
+  over all days, negative beta/alpha, constant returns, missing or insufficient
+  stock/benchmark history, same-date alignment, rolling/scalar agreement,
+  historical no-lookahead, JSON compatibility, cache invalidation and exports.
+- Streamlit interaction tests cover custom horizons/benchmarks/rates/targets,
+  metric selection, explicit Apply behavior, no repeated price downloads for
+  rate changes, downloading only a new benchmark, disabled analytics, missing
+  benchmarks, performance charts, grid ranking and invalid-input recovery.
+- Live Yahoo retrieval and the CLI completed for AAPL, MSFT and BRK-B, plus
+  SPY as the benchmark, with screening date January 16, 2024. All three had
+  finite 63/126/252-return Sharpe, 252-return beta and annualized alpha. These
+  were historical data downloads; no full 503-stock live risk run is claimed.
+- A synthetic **503-stock** screen, with all three default risk horizons and
+  complete benchmark data, took **6.380 seconds** excluding acquisition.
+  All 503 stocks had nonmissing Sharpe values at 63/126/252 returns and
+  nonmissing 252-return beta and alpha.
+- Updated Streamlit process readiness returned HTTP 200 from its health
+  endpoint. Python compilation and Ruff checks passed.
+
+Native Windows/Mac launcher behavior and pixel-level browser rendering remain
+unverified here. Streamlit widget/script interactions, Plotly figure creation,
+server readiness and exported bytes were checked. Historical statistics use
+current constituents and retrospectively adjusted data, as described in README.
+The risk-free input is an explicit constant annual assumption, not a live rate.

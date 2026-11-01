@@ -40,7 +40,9 @@ def main():
     universe["provider_ticker"] = universe.ticker.map(lambda t: aliases.get(t, t))
     provider = AliasedProvider(DemoProvider() if args.demo else YFinanceProvider(), aliases)
     data = PriceCache(args.cache_dir / "prices", provider).get_many(
-        universe.ticker.tolist(), start, end, force=args.refresh,
+        list(dict.fromkeys([*universe.ticker.tolist(),
+                           *([config.risk.benchmark] if config.risk.enabled else [])])),
+        start, end, force=args.refresh,
         refresh_recent=not args.date,
     )
     run = screen(universe, data.frames, config, end)

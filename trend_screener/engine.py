@@ -10,6 +10,7 @@ from .calendar import sessions
 from .indicators import add_indicators
 from .models import ScreenConfig
 from .rules import RuleResult, combine, evaluate_rule
+from .risk import RiskReport, reports_for_stock
 
 
 @dataclass
@@ -19,6 +20,8 @@ class ScreenRun:
     table: pd.DataFrame
     frames: dict[str, pd.DataFrame] = field(default_factory=dict)
     evaluations: dict[str, dict[str, RuleResult]] = field(default_factory=dict)
+    risk_reports: dict[str, dict[int, RiskReport]] = field(default_factory=dict)
+    benchmark: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     @property
     def passing(self) -> pd.DataFrame:
@@ -36,10 +39,18 @@ class ScreenRun:
 
 
 def screen(universe: pd.DataFrame, prices: dict[str, pd.DataFrame], config: ScreenConfig,
-           screen_date: date, *, indicator_cache: dict | None = None, progress=None) -> ScreenRun:
+           screen_date: date, *, indicator_cache: dict | None = None,
+           risk_cache: dict | None = None, progress=None) -> ScreenRun:
     config.validate()
     active_rules = [r for r in config.rules if r.enabled]
     run = ScreenRun(config, screen_date, pd.DataFrame())
+    if config.risk.enabled:
+        benchmark = prices.get(config.risk.benchmark)
+        if benchmark is not None:
+            run.benchmark = benchmark.loc[benchmark.index <= pd.Timestamp(screen_date)].copy()
+    benchmark_prices = run.benchmark.get("adj_close")
+    benchmark_fingerprint = hashlib.blake2b(
+        pd.util.hash_pandas_object(run.benchmark, index=True).values.tobytes(), digest_size=16).digest()
     rows = []
     enabled_mas = [m for m in config.moving_averages if m.enabled]
     signature = (str(screen_date), config.price_source, config.return_kind,
@@ -97,6 +108,23 @@ def screen(universe: pd.DataFrame, prices: dict[str, pd.DataFrame], config: Scre
             row[f"rank_{metric}"] = primary.get(metric, math.nan)
         row["data_notes"] = " | ".join(f"{r.name}: {evaluations[r.id].reason}" for r in active_rules
                                      if not evaluations[r.id].valid)
+        if config.risk.enabled:
+            risk_key = (ticker, str(screen_date), config.risk.signature(), fingerprint, benchmark_fingerprint)
+            reports = risk_cache.get(risk_key) if risk_cache is not None else None
+            if reports is None:
+                reports = reports_for_stock(prepared.adj_close, benchmark_prices, config.risk)
+                if risk_cache is not None:
+                    risk_cache[risk_key] = reports
+            run.risk_reports[ticker] = reports
+            row.update({
+                "risk_benchmark": config.risk.benchmark, "risk_free_assumption_pct": config.risk.risk_free_pct,
+                "risk_benchmark_provider": config.data_settings.get("ticker_aliases", {}).get(
+                    config.risk.benchmark, config.risk.benchmark),
+                "risk_sessions_per_year": config.risk.annualization,
+                "sortino_target_assumption_pct": config.risk.target_pct,
+            })
+            for report in reports.values():
+                row.update(report.table_columns())
         rows.append(row)
         run.frames[ticker], run.evaluations[ticker] = prepared, evaluations
         if progress and ((i + 1) % 10 == 0 or i + 1 == len(universe)):

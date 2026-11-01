@@ -26,4 +26,8 @@ def history_zip(run: ScreenRun, tickers: list[str] | None = None) -> bytes:
                           "These histories end at the screen date; forward outcomes are excluded.\n")
         for ticker in tickers if tickers is not None else run.frames:
             archive.writestr(f"{ticker.replace('^', 'INDEX_')}.csv", run.frames[ticker].to_csv())
+        if run.config.risk.enabled and not run.benchmark.empty:
+            symbol = run.config.risk.benchmark.replace("^", "INDEX_")
+            archive.writestr(f"benchmark_{symbol}.csv", run.benchmark.to_csv(index_label="date"))
+        archive.writestr("screen_results.csv", run.table.to_csv(index=False))
     return buffer.getvalue()

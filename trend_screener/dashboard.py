@@ -25,6 +25,8 @@ from .presets import PresetStore, builtins
 from .providers import AliasedProvider, YFinanceProvider
 from .research import forward_returns
 from .rules import window_description
+from .risk import RISK_METRICS, risk_column_label
+from .risk_dashboard import performance_panel, risk_settings_panel
 from .universe import UniverseService, custom_universe, parse_tickers, provider_symbol
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,7 +41,7 @@ def home() -> Path:
 def load_config(config: ScreenConfig) -> None:
     st.session_state.draft = ScreenConfig.from_dict(config.to_dict())
     st.session_state.editor_version = st.session_state.get("editor_version", 0) + 1
-    for name in ("raw_batch", "data_key", "data_loaded_at", "indicator_cache"):
+    for name in ("raw_batch", "data_key", "data_loaded_at", "indicator_cache", "risk_cache"):
         st.session_state.pop(name, None)
 
 
@@ -371,6 +373,7 @@ def rule_editor(config: ScreenConfig, rule: Rule, relationships: bool = False):
 
 
 def build_panel(config):
+    risk_settings_panel(config, key)
     moving_average_builder(config)
     group_builder(config)
     st.subheader("Trend detection rules")
@@ -458,6 +461,8 @@ def run_screen(config: ScreenConfig, settings):
             raise ValueError(st.session_state.ma_error)
         if st.session_state.get("alias_error"):
             raise ValueError(st.session_state.alias_error)
+        if config.risk.enabled and st.session_state.get("risk_settings_error"):
+            raise ValueError(st.session_state.risk_settings_error)
         if settings["incomplete_range"]:
             raise ValueError("Complete the custom date range")
         if settings["display_start"] > settings["screen_date"]:
@@ -470,7 +475,9 @@ def run_screen(config: ScreenConfig, settings):
         universe["provider_ticker"] = universe.ticker.map(lambda t: settings["ticker_aliases"].get(t, t))
         end, display_start = settings["screen_date"], settings["display_start"]
         start = history_start(display_start, end, snapshot_config.required_history())
-        data_key = (settings["source"], settings["cache_only"], tuple(universe.ticker),
+        download_tickers = list(dict.fromkeys([
+            *universe.ticker.tolist(), *([snapshot_config.risk.benchmark] if snapshot_config.risk.enabled else [])]))
+        data_key = (settings["source"], settings["cache_only"], tuple(download_tickers),
                     tuple(sorted(settings["ticker_aliases"].items())), str(start), str(end))
         reuse = (not settings["force"] and not settings["retry_missing"]
                  and st.session_state.get("data_key") == data_key
@@ -485,7 +492,7 @@ def run_screen(config: ScreenConfig, settings):
                 progress.progress(0.05 + 0.5 * done / max(total, 1),
                                   text=f"Loading prices: {done} / {total}")
             batch = PriceCache(home() / "prices", provider).get_many(
-                universe.ticker.tolist(), start, end, force=settings["force"],
+                download_tickers, start, end, force=settings["force"],
                 refresh_recent=settings["time_mode"] == "Latest completed session",
                 cache_only=settings["cache_only"] and not settings["demo"], progress=downloaded,
                 retry_missing=settings["retry_missing"],
@@ -493,10 +500,12 @@ def run_screen(config: ScreenConfig, settings):
             st.session_state.raw_batch, st.session_state.data_key = batch, data_key
             st.session_state.data_loaded_at = time.time()
             st.session_state.indicator_cache = {}
+            st.session_state.risk_cache = {}
         def analyzed(done, total):
             progress.progress(0.55 + 0.45 * done / max(total, 1), text=f"Analyzing: {done} / {total}")
         run = screen(universe, batch.frames, snapshot_config, end,
-                     indicator_cache=st.session_state.setdefault("indicator_cache", {}), progress=analyzed)
+                     indicator_cache=st.session_state.setdefault("indicator_cache", {}),
+                     risk_cache=st.session_state.setdefault("risk_cache", {}), progress=analyzed)
         st.session_state.run = run
         st.session_state.run_batch = batch
         st.session_state.run_universe_snapshot = st.session_state.get("universe_snapshot")
@@ -583,13 +592,24 @@ def results_panel(run: ScreenRun, display_start):
     default_columns = [c for c in ["ticker", "company", "sector", "latest_adjusted_price", "daily_return_pct",
                                    "return_5d_pct", "return_20d_pct", "rank_normalized_slope", "rank_r2",
                                    "rules_passed", "rules_unavailable", "status"] if c in table]
+    if run.config.risk.enabled:
+        default_columns += [f"risk_{n}_{m}" for n in run.config.risk.lookbacks for m in run.config.risk.metrics]
+        st.caption(f"Risk benchmark: {run.config.risk.benchmark} · "
+                   f"annual risk-free assumption: {run.config.risk.risk_free_pct:g}%. "
+                   "Risk metrics use adjusted simple returns; blank values indicate incomplete data or undefined ratios. "
+                   "The risk panel compares periods and explains the calculations.")
     visible = st.multiselect("Visible columns", list(table.columns), default=default_columns,
+                             format_func=risk_column_label,
                              key=f"visible_columns_{st.session_state.run_id}")
     if not visible:
         visible = ["ticker", "status"]
     if table.empty:
         st.info("No stocks matched. Inspect all stocks by turning off the matching-only toggle, or change the rules.")
     event = st.dataframe(table[visible], hide_index=True, width="stretch", height=400,
+                          column_config={
+                              name: st.column_config.NumberColumn(risk_column_label(name), format="%.4f")
+                              for name in visible if any(name == f"risk_{n}_{m}"
+                                                        for n in run.config.risk.lookbacks for m in RISK_METRICS)},
                           selection_mode="single-row", on_select="rerun",
                           key=f"results_table_{st.session_state.run_id}_{matches_only}")
     st.caption("Select a row to open its detailed chart below. Column headers sort the table. "
@@ -650,6 +670,18 @@ def grid_panel(run, display_start):
     metrics = {"Normalized MA slope": f"{chosen}.normalized_slope",
                "MA percentage increase": f"{chosen}.pct_change", "Regression R-squared": f"{chosen}.r2",
                "Longest rising streak": f"{chosen}.longest_streak", "Recent 20-day stock return": "return_20d_pct"}
+    if run.config.risk.enabled:
+        horizon = st.selectbox("Performance ranking lookback", run.config.risk.lookbacks,
+                               index=run.config.risk.lookbacks.index(max(run.config.risk.lookbacks)),
+                               key="grid_risk_horizon")
+        metrics.update({
+            "Highest Sharpe": f"risk_{horizon}_sharpe",
+            "Highest Sortino": f"risk_{horizon}_sortino",
+            "Highest alpha": f"risk_{horizon}_alpha_ann_pct",
+            "Lowest beta": f"risk_{horizon}_beta",
+            "Lowest volatility": f"risk_{horizon}_volatility_ann_pct",
+            "Smallest drawdown": f"risk_{horizon}_max_drawdown_pct",
+        })
     sort = st.selectbox("Sort charts by", list(metrics), key="grid_sort")
     c = st.columns(3)
     size = c[0].selectbox("Charts per page", [4, 8, 12, 20], key="grid_size")
@@ -663,7 +695,8 @@ def grid_panel(run, display_start):
     data = run.passing
     column = metrics[sort]
     if column in data:
-        data = data.sort_values(column, ascending=False, na_position="last")
+        data = data.sort_values(column, ascending=sort in {"Lowest beta", "Lowest volatility", "Smallest drawdown"},
+                                na_position="last")
     subset = data.iloc[(page - 1) * size:page * size]
     st.caption(f"Page {page} of {pages} · {len(run.passing)} matches")
     rule = next(r for r in rules if r.id == chosen)
@@ -781,8 +814,9 @@ def main():
     left, right = st.columns([1, 3])
     run_clicked = left.button("Run Screen", type="primary", width="stretch", key="run_screen")
     right.caption("Edit your conditions, then run. Charts and results use the last applied configuration.")
-    build, results, explorer, grid, presets, research = st.tabs(
-        ["Build screen", "Results", "Stock explorer", "Chart grid", "Saved presets", "Historical research"])
+    build, results, explorer, performance, grid, presets, research = st.tabs(
+        ["Build screen", "Results", "Stock explorer", "Risk & performance",
+         "Chart grid", "Saved presets", "Historical research"])
     with build:
         build_panel(config)
     # Config name changes in presets are included before execution and the draft fingerprint.
@@ -805,12 +839,14 @@ def main():
             results_panel(run, applied["display_start"])
         with explorer:
             explorer_panel(run, applied["display_start"])
+        with performance:
+            performance_panel(run, demo=applied["demo"], widget_prefix=f"risk_{st.session_state.run_id}")
         with grid:
             grid_panel(run, applied["display_start"])
         with research:
             research_panel(run)
     else:
-        for tab in (results, explorer, grid, research):
+        for tab in (results, explorer, performance, grid, research):
             with tab:
                 st.info("Configure a screen and click Run Screen. Choose Synthetic demo in Data settings to try it offline.")
     st.divider()

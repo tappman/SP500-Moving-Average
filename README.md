@@ -89,6 +89,92 @@ Edits remain drafts until **Run Screen**. Old results keep their applied configu
 
 ## Mathematical definitions
 
+### Risk and performance analytics
+
+Open **Build screen → Risk & performance settings** to enable these metrics,
+choose lookbacks and select columns. Then click **Run Screen**. The **Risk &
+performance** tab compares the selected stock across every lookback and offers
+rolling metric charts, growth of 100, drawdown and a per-stock CSV download.
+The results table, Excel, CSV and chart-grid sorting also include these metrics.
+
+- Defaults are **63, 126 and 252 daily returns**. Enter any integer lookbacks
+  of at least 2, separated by commas. An N-return window requires **N+1 consecutive
+  adjusted closes** ending on the screening session.
+- Both **annualized Sharpe** and **unannualized daily Sharpe** are available.
+  Select the daily version in the metrics selector to show it alongside the
+  annualized version. Shorter and longer lookbacks can be compared side by side.
+- The default benchmark is **SPY**, an adjusted ETF proxy. You can choose
+  **^GSPC**, **QQQ** or a custom provider ticker. ^GSPC is a price index and does
+  not include reinvested dividends. Ticker aliases also apply to benchmarks;
+  the actual provider symbol is recorded in the exported results.
+- The **annual risk-free assumption defaults to 0%**. This is a configurable
+  assumption, not a live Treasury quote. Sortino can use this rate as its target
+  or a separately specified annual minimum acceptable return.
+- **252 trading sessions per year** is the default annualization assumption.
+  All performance statistics use **adjusted daily simple returns**, independently
+  of the MA price basis and simple/log daily-return display choice.
+
+Let r be the stock's daily simple return, b the benchmark's return, A the
+selected sessions per year and N the number of returns. For an annual
+effective risk-free assumption R entered in percent, the daily rate is
+f = (1 + R/100)^(1/A) − 1. The Sortino target T is converted to daily target m
+the same way. Standard deviations below use the sample convention (N−1).
+
+| Metric | Calculation and units |
+| --- | --- |
+| Daily Sharpe | mean(r−f) / standard_deviation(r−f) |
+| Annualized Sharpe | Daily Sharpe × sqrt(A) |
+| Annualized Sortino | mean(r−m) × sqrt(A) / sqrt(mean(min(r−m, 0)²)); downside mean includes **all N days** |
+| Annualized volatility | standard_deviation(r) × sqrt(A) × 100, in percent |
+| Annualized downside deviation | sqrt(mean(min(r−m, 0)²)) × sqrt(A) × 100 |
+| Beta | OLS slope of (r−f) against (b−f), with an intercept; covariance / benchmark variance |
+| Daily regression alpha | mean(r−f) − beta × mean(b−f), displayed ×100 in percent |
+| Annualized regression alpha | Daily intercept × A ×100; **arithmetic annualization**, not CAGR |
+| Return-regression R-squared | Squared stock/benchmark return correlation; distinct from MA-trend R² |
+| Total adjusted return | (final adjusted close / starting adjusted close − 1) ×100 |
+| CAGR | ((final / starting adjusted close)^(A/N) − 1) ×100; per assumed trading year |
+| Annualized mean return | mean(r) × A ×100; an arithmetic measure, separate from CAGR |
+| Maximum drawdown magnitude | Largest adjusted-price peak-to-trough loss inside this window, as positive percent |
+| Calmar | CAGR / maximum drawdown magnitude, using the same window |
+| Annualized tracking error | standard_deviation(r−b) × sqrt(A) ×100 |
+| Annualized information ratio | mean(r−b) × sqrt(A) / standard_deviation(r−b) |
+| Active total return | Stock total return minus benchmark total return, in percentage points |
+| Positive daily returns | Percentage of the N daily stock returns that are strictly positive |
+
+Stock and benchmark returns use the **same dates**. Missing observations are
+never dropped to manufacture a shorter sample or filled with old prices.
+If benchmark prices are incomplete, stock-only metrics can still be shown;
+beta, alpha and other benchmark-dependent values remain unavailable. If the
+stock window is incomplete, its risk metrics remain unavailable.
+Zero-volatility, zero-downside and zero-drawdown ratios are also unavailable;
+they are not displayed as zero or infinity. The detail panel explains missing
+metrics. Numerical denominator values at or below 1e-12 in daily-return units
+are treated as zero to avoid floating-point artifacts.
+
+Annualization uses the conventional square-root scaling and does not correct
+for serial correlation. Lookback, frequency, risk-free and benchmark choices
+can produce different results from other platforms. These are statistics of
+historical stock returns, **not a backtest of a moving-average trading strategy**
+and not estimates of the probability that tomorrow's price will rise.
+
+Risk metrics do not change which stocks pass the MA rules. Use the table to
+sort metrics and the chart grid's performance lookback to rank matching stocks
+by Sharpe, Sortino, alpha, beta, volatility or drawdown.
+
+Enabling the default analytics can require more warm-up data than an MA-only
+screen: the loader requests at least the largest risk lookback plus one close,
+and downloads the benchmark once alongside the universe. This uses the same
+incremental cache. Changing just rates, visible metrics or MA thresholds reuses
+loaded prices. A new benchmark or a longer required history fetches the needed
+data. Disabling analytics removes the benchmark request and risk warm-up
+requirement. Existing saved configurations without a risk section load with
+the editable defaults; saving now also preserves the risk settings.
+
+Formula references: [William F. Sharpe, The Sharpe Ratio](https://web.stanford.edu/~wfsharpe/art/sr/sr.htm)
+and [CFA Institute Research Foundation, Alternative Investments (downside-risk measures)](https://www.cfainstitute.org/sites/default/files/-/media/documents/book/rf-publication/2018/rf-v2018-n1-1.pdf).
+
+### Moving-average rules
+
 All windows count **NYSE sessions**, not calendar days. The calendar accounts for holidays, weekends, daylight saving and early closes. Latest mode uses a 15-minute publication buffer after the official close.
 
 | Method | Exact definition |
@@ -189,6 +275,7 @@ The independently specified datasets in **examples/synthetic_scenarios.json** in
 | universe.py | Current membership, metadata and symbol normalization |
 | providers.py, cache.py, calendar.py | Data abstraction, aliases, validation, Parquet cache and NYSE sessions |
 | indicators.py, metrics.py | Causal MAs/returns and trend mathematics |
+| risk.py, risk_dashboard.py | Validated risk settings, date-aligned performance calculations, rolling metrics and dashboard panels |
 | rules.py, engine.py | Independent conditions, nested logic, indicator reuse and results |
 | charts.py, exports.py | Auditable Plotly views and CSV/Excel/ZIP downloads |
 | presets.py, presets/ | Editable built-in and local presets |
