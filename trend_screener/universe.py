@@ -1,6 +1,6 @@
 """Current membership discovery with source timestamps and an explicit stale-cache fallback."""
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from io import StringIO
 import json
 from pathlib import Path
@@ -13,6 +13,28 @@ from urllib3.util.retry import Retry
 
 WIKIPEDIA = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 CSV_MIRROR = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
+
+# Verified first regular-way trading sessions for recent standalone spin-offs.
+# These symbols cannot have standalone prices before these dates. Do not use
+# their former parents' histories or mistake that absence for a Yahoo outage.
+# Sources: FedEx (2026-06-01), Honeywell (2026-06-29), Vylor SEC 8-K (2026-10-01).
+KNOWN_FIRST_TRADING_DATES = {
+    "FDXF": date(2026, 6, 1),
+    "HONA": date(2026, 6, 29),
+    "VYLR": date(2026, 10, 1),
+}
+
+
+def known_not_yet_trading(tickers, screen_date: date, aliases=None) -> dict[str, date]:
+    """Documented pre-listing symbols; user-defined ticker aliases take precedence."""
+    aliases = aliases or {}
+    return {
+        ticker: first_day
+        for ticker in tickers
+        if ticker not in aliases
+        for first_day in [KNOWN_FIRST_TRADING_DATES.get(ticker)]
+        if first_day is not None and screen_date < first_day
+    }
 
 
 def provider_symbol(symbol: str) -> str:
