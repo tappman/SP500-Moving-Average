@@ -130,6 +130,34 @@ class YFinanceProvider:
                     output.errors.update({t: f"{type(exc).__name__}: {exc}" for t in pending})
                 if pending and attempt < self.retries:
                     time.sleep(min(2**attempt, 4))
+            # Recently listed/spun-off shares may fail a long multi-ticker history
+            # download even when Yahoo supplies their current daily bars.
+            # Retry only a small failed subset through the single-ticker API.
+            # Never replace adjusted prices with unadjusted Close values.
+            if 0 < len(pending) <= 8:
+                recent_start = max(start, end - timedelta(days=210))
+                for ticker in pending:
+                    error = output.errors.get(ticker, "")
+                    if any(mark in error.lower() for mark in
+                           ("yf ratelimiterror", "yfratelimiterror", "too many requests",
+                            "429 client error", "http error 429")):
+                        continue
+                    try:
+                        history = yf.Ticker(ticker).history(
+                            start=recent_start.isoformat(),
+                            end=(end + timedelta(days=1)).isoformat(),
+                            interval="1d", auto_adjust=False, actions=False,
+                            repair=False,
+                        )
+                        if history is None or history.empty:
+                            continue
+                        recovered = normalize_bars(history).loc[str(start):str(end)]
+                        if recovered["adj_close"].notna().any():
+                            output.frames[ticker] = recovered
+                            output.errors.pop(ticker, None)
+                    except (Exception):
+                        # Preserve the original diagnostic if the backup request fails.
+                        continue
             if begin + self.batch_size < len(tickers):
                 time.sleep(0.15)
         return output
