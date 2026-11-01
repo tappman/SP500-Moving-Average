@@ -2,7 +2,7 @@
 
 Original release verification date: October 31, 2026 (America/New_York). Python 3.12.14.
 
-**Latest research update (version 1.2.0): 149 tests passed.**
+**Latest portable research update (version 1.2.1): 168 tests passed.**
 
 The original release results below are retained as history. Risk/performance and UI update verification follow at the end.
 
@@ -192,11 +192,64 @@ Historical membership coverage is supplied and declared by the user. The app
 does not validate a vendor's completeness or reconstruct security identities.
 Missing held-position prices stop a backtest explicitly. Cohort gaps remain
 unavailable. Costs are a daily-bar approximation; tax, impact, spread, liquidity,
-shorting and order execution are not modeled. Frozen plans store definitions and
-price fingerprints, not an immutable archive of provider price vintages. A
-declared holdout does not prove that a person never examined those dates.
+shorting and order execution are not modeled. At version 1.2.0, frozen plans
+stored definitions and price fingerprints. Version 1.2.1, below, additionally
+preserves the loaded inputs; neither version reconstructs original historical
+vendor price vintages. A declared holdout does not prove that a person never
+examined those dates.
 
 Pixel-level browser/mobile review and native Windows/Mac double-click behavior
 remain unverified in this environment. New charts use the same shared styling;
 Streamlit script/widget workflows, numerical results, file generation and local
 server readiness were verified.
+
+## Portable frozen studies — November 1, 2026
+
+Version 1.2.1 closes the dependency between frozen holdout plans and the mutable
+market-data cache. Freezing now saves the actual loaded price bars, fixed
+universe and supplied membership intervals as a reusable Parquet/ZIP archive.
+The saved plan records its whole-archive checksum, and each file has an internal
+checksum. Atomic publication and a per-snapshot file lock preserve existing
+archives when multiple processes save the same inputs. The manifest records
+app, Python, pandas, NumPy and PyArrow versions.
+
+**Historical research → Saved holdouts** is available without an applied screen
+or newly loaded study. It evaluates the archived inputs, prepares a portable
+bundle download, and restores bundles through an import button. Missing or
+damaged inputs are errors, with no replacement market-data download. A verified
+backup can repair a damaged snapshot. Legacy settings-only plans retain their
+matching-loaded-data requirement. Imports create a separate ledger entry and
+preserve originating-plan/source information.
+
+### Executed verification
+
+- Final complete suite: **168 tests passed in 115.02 seconds**. Ruff and Python
+  compilation also passed on the final source.
+- **19 new cases** cover exact price/universe/signal round trips, effective
+  historical membership and missing observations, input archive reuse, frozen
+  evaluation after changing live inputs and reopening storage, identical equity
+  and trade results after bundle import into an empty application-data folder,
+  metadata/container differences, missing archives, whole-file and internal
+  checksum failures, backup repair, invalid configuration/split/format/metadata/
+  nonfinite JSON, legacy plans and insufficient holdout sessions.
+- The new Streamlit interaction case opens the dashboard with **no applied
+  screen** and blocks both Yahoo and demo provider download methods. Saved
+  evaluation produces equity/drawdown charts and the prepared bundle bytes
+  without invoking either provider. The existing full research workflow also
+  passes with the new freeze/evaluate path.
+- Larger synthetic snapshot: **503 fictional stocks plus one benchmark**,
+  **250 study sessions** with additional warm-up history. The archive was
+  **11,982,213 bytes (11.427 MiB)**. Saving took **0.808 s**; restoration including
+  causal indicator preparation took **4.642 s**. Reusing identical inputs took
+  **0.081 s** and retained one archive. The restored price fingerprint matched.
+  These are local timings and synthetic data, not live-market validation.
+- Updated Streamlit process readiness: **HTTP 200**, body `ok`; the smoke-test
+  process was terminated afterward.
+
+Portability was tested between separate local application-data folders in the
+same Python environment, not across a Windows/Mac/Linux or library-version
+matrix. The native upload/download dialogs and pixel-level browser layout remain
+unverified. Original provider vintage reconstruction and proof that a person
+never examined the declared holdout remain unavailable; saved snapshots preserve
+the data loaded by this app when frozen. Source/software version information is
+recorded, while the bundle does not embed an executable software environment.

@@ -83,7 +83,7 @@ For “MA20 increased on at least 8 of the last 10 days,” choose **Positive tr
 | Downloads | Displayed/all results CSV, Excel, per-stock OHLCV/return/MA CSV, all-stock historical ZIP, JSON configuration |
 | Historical research | Causal screens ending at the selected session; separate opt-in 5/20/60-session forward outcomes |
 | Screen history | Automatic local snapshots on successful runs; new/dropped qualifiers, unavailable data, changed rules and streaks across saved dates |
-| Research lab | Multi-date cohort/control comparisons, cost-aware portfolio simulation, fixed parameter neighbors, chronological slices, frozen declared holdouts and trial ledger |
+| Research lab | Multi-date cohort/control comparisons, cost-aware portfolio simulation, fixed parameter neighbors, chronological slices, portable frozen holdouts and trial ledger |
 | Portfolio concentration | Equal/custom weights, cash, sector exposure, effective holdings, stock correlations, variance contributions and hypothetical basket risk |
 
 Grid sorting supports normalized slope, MA change, R-squared, longest rising streak or recent stock return. Select the ranking rule so comparisons use the same window. The table's rank_* convenience columns use the first valid enabled non-price rule; each rule also has its own detailed columns.
@@ -372,17 +372,42 @@ declared order; there is no automatic best-parameter selection. Slices reset
 capital and liquidate at their own ends, so they are separate experiments.
 
 **Freeze this plan for holdout** saves a copy of the applied rules, settings,
-split, source information and loaded-price fingerprint. **Evaluate frozen holdout**
-uses that saved copy on dates strictly after the split, with new next-open
-orders. Draft edits cannot change it. Reload the same full date range to reuse
-a plan after restarting; a changed price or membership fingerprint is rejected.
-The normal cache is not an immutable archive of old price vintages, so retain
-downloaded evidence if an original price snapshot must be preserved.
+split, source information and an input snapshot containing the actual loaded
+OHLCV/adjusted bars, fixed universe and supplied membership intervals. **Evaluate
+frozen holdout** uses those saved inputs on dates strictly after the split, with
+new next-open orders. Draft edits, a different current universe and later price-cache
+updates do not replace the frozen inputs. Both training and holdout need at least
+two trading sessions. Identical inputs reuse one archive across frozen plans.
+
+Open **Historical research → Saved holdouts** after restarting, select the plan
+and press **Evaluate saved holdout**. No applied screen, loaded study, provider
+call or Internet price retrieval is needed. **Prepare frozen study download**
+enables a ZIP containing the plan and complete input snapshot. In another
+installation, use **Restore a frozen study bundle → Import frozen study** to
+restore it, then evaluate using the same buttons. Imports preserve the declared
+holdout/source information and record the originating plan; they create a new
+local ledger entry without overwriting an existing plan.
+
+Snapshots store per-file and whole-archive SHA-256 checksums, source metadata
+and the app/Python/pandas/NumPy/PyArrow versions. Restoration verifies the price,
+universe and membership inputs. Missing or damaged archives produce an error;
+the app does not silently substitute new market data. Snapshots live under
+`.screener/research/snapshots/` and are excluded from Git. Back up the full research
+directory or export portable bundles before moving installations.
+
+Plans created before version 1.2.1 have no archived price bars and retain their
+original requirement for matching loaded study data. Their saved settings remain
+available; freeze a new plan to capture a portable snapshot. The archive preserves
+the prices loaded when you freeze, **not an original historical vendor vintage**.
+Reproducing an older snapshot across substantially different library/app versions
+may require its recorded environment, and the program rejects changed input
+fingerprints. Its source code and software environment are recorded by version,
+not embedded as an executable application in the bundle.
 
 A declared holdout does **not** prove the historical period was unseen by you.
 Repeated manual exploration, changing split dates and repeated tests can still
 overfit. Every executed trial/evaluation and frozen plan is retained locally and
-the complete experiment ledger and frozen JSON are downloadable. The app does
+the complete experiment ledger, frozen JSON and new portable input bundles are downloadable. The app does
 not calculate a probability of backtest overfitting or claim statistical validation.
 
 ### Portfolio concentration and correlations
@@ -449,6 +474,7 @@ The independently specified datasets in **examples/synthetic_scenarios.json** in
 | research.py, cli.py, demo.py | Separate forward research, CLI and synthetic data |
 | membership.py, history.py | Effective membership intervals, SQLite screen snapshots and experiment ledger |
 | studies.py, robustness.py | Causal historical signals, cohorts, simulator, recorded training trials and frozen holdouts |
+| snapshots.py | Atomic reusable Parquet input archives, checksums and offline restoration |
 | portfolio.py, research_dashboard.py | Aligned weighted-basket risk, concentration and button-driven research UI |
 | tests/ | Closed-form, adversarial, missing-data, cache and application interaction cases |
 

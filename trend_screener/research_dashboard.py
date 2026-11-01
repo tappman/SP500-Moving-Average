@@ -22,10 +22,11 @@ from .portfolio import analyze_portfolio
 from .providers import AliasedProvider, YFinanceProvider
 from .risk import RISK_METRICS
 from .robustness import (
-    engine_slice, evaluate_frozen_holdout, finite_json, recorded_backtest, robustness_trials,
+    engine_slice, evaluate_frozen_holdout, export_frozen_bundle, finite_json, freeze_study,
+    import_frozen_bundle, recorded_backtest, robustness_trials,
 )
 from .studies import (
-    RANKINGS, BacktestSettings, StudyEngine, cohort_study, frozen_plan,
+    RANKINGS, BacktestSettings, StudyEngine, cohort_study,
 )
 from .universe import provider_symbol
 
@@ -267,10 +268,13 @@ def load_study(run, applied, home, start, end, mode, benchmark):
 
 
 def research_views(home, run, forward_panel):
-    outcomes, cohorts, simulation, robustness, membership_tab = st.tabs(
-        ["Single-date outcomes", "Outcome comparison", "Portfolio backtest", "Robustness", "Membership data"])
+    outcomes, cohorts, simulation, robustness, membership_tab, saved_tab = st.tabs(
+        ["Single-date outcomes", "Outcome comparison", "Portfolio backtest", "Robustness", "Membership data",
+         "Saved holdouts"])
     with membership_tab:
         membership_panel(home)
+    with saved_tab:
+        saved_holdouts_panel(home)
     if run is None:
         for tab in (outcomes, cohorts, simulation, robustness):
             with tab:
@@ -426,7 +430,7 @@ def cohort_panel(engine, benchmark, run, store):
 
 def robustness_panel(engine, benchmark, run, store):
     st.caption("Compare a fixed neighborhood and chronological slices. Declare a holdout before examining its "
-               "result. Freezing records the plan and price fingerprint; it cannot prove you have never "
+               "result. Freezing saves the plan, prices and membership; it cannot prove you have never "
                "seen these historical dates. No optimizer selects the best test result.")
     split = st.date_input("Training ends / declared holdout starts after", value=engine.dates[int(len(engine.dates) * .65)].date(),
                            min_value=engine.start, max_value=engine.end, key="robust_split")
@@ -460,12 +464,14 @@ def robustness_panel(engine, benchmark, run, store):
                            file_name="training_robustness.csv", mime="text/csv", key="robust_export")
     if st.button("Freeze this plan for holdout", key="robust_freeze"):
         try:
-            plan = frozen_plan(run.config, settings, engine, split,
-                               {"source": run.config.data_settings.get("source"),
-                                "membership_source": engine.membership.source if engine.membership else "Fixed applied universe"})
-            identifier = store.record_experiment("frozen_holdout", plan)
+            identifier = freeze_study(store, run.config, settings, engine, split,
+                                       {"source": run.config.data_settings.get("source"),
+                                        "ticker_aliases": run.config.data_settings.get("ticker_aliases", {}),
+                                        "membership_source": engine.membership.source if engine.membership else "Fixed applied universe"})
             st.session_state.frozen_choice = identifier
-            st.success(f"Plan frozen as {identifier[:12]}. Later draft edits do not change it.")
+            st.session_state.holdout_choice = identifier
+            st.success(f"Plan and inputs frozen as {identifier[:12]}. Reopen or export it from Saved holdouts, "
+                       "including after an app restart.")
         except (ValueError, OSError) as exc:
             st.error(str(exc))
     ledger = store.list_experiments()
@@ -477,6 +483,9 @@ def robustness_panel(engine, benchmark, run, store):
                                 format_func=lambda x: f"{x[:12]} · {frozen.set_index('id').loc[x, 'created_at'][:19]} UTC",
                                 key="holdout_choice")
         plan = store.experiment(chosen)
+        if plan["plan"].get("snapshot"):
+            st.caption("Evaluation uses the saved input snapshot. The currently loaded study and later cache updates "
+                       "do not replace those inputs.")
         with st.expander("Frozen assumptions"):
             st.json(plan)
         st.download_button("Download frozen plan", json.dumps(plan, indent=2),
@@ -502,3 +511,65 @@ def robustness_panel(engine, benchmark, run, store):
         st.dataframe(ledger, hide_index=True, width="stretch")
         st.download_button("Download experiment ledger", ledger.to_csv(index=False),
                            file_name="research_experiments.csv", mime="text/csv", key="ledger_export")
+
+
+def saved_holdouts_panel(home):
+    st.subheader("Saved holdouts")
+    st.caption("Reopen frozen research without running a new screen or downloading prices. Portable bundles "
+               "contain the frozen rules, simulation settings, price bars, universe and supplied membership.")
+    store = HistoryStore(Path(home) / "research")
+    with st.expander("Restore a frozen study bundle"):
+        uploaded = st.file_uploader("Frozen study bundle (ZIP)", type="zip", key="saved_holdout_upload")
+        if st.button("Import frozen study", disabled=uploaded is None, key="saved_holdout_import"):
+            try:
+                identifier = import_frozen_bundle(store, uploaded.getvalue())
+                st.session_state.archived_holdout_choice = identifier
+                st.session_state.pop("saved_holdout_result", None)
+                st.success("Frozen study restored. Its saved inputs are ready to evaluate offline.")
+            except (ValueError, RuntimeError, OSError) as exc:
+                st.error(str(exc))
+    ledger = store.list_experiments()
+    frozen = ledger[ledger.kind.eq("frozen_holdout")]
+    if frozen.empty:
+        empty_state("Your frozen research will appear here", "Load a study, open Robustness and freeze a plan. "
+                    "You can also restore a previously exported frozen study bundle above.")
+        return
+    ids = frozen.id.tolist()
+    chosen = st.selectbox("Saved holdout", ids, key="archived_holdout_choice",
+                            format_func=lambda x: f"{x[:12]} · {frozen.set_index('id').loc[x, 'created_at'][:19]} UTC")
+    record = store.experiment(chosen)
+    plan, snapshot = record["plan"], record["plan"].get("snapshot")
+    source = plan.get("metadata", {}).get("source") or plan["config"].get("data_settings", {}).get("source", "Unspecified source")
+    st.caption(f"{source} · study {plan['start']} to {plan['end']} · training ends {plan['split']}")
+    if snapshot:
+        st.caption(f"Saved inputs: {snapshot['bytes'] / (1024 * 1024):.2f} MiB · captured {snapshot['created_at'][:19]} UTC")
+    else:
+        st.info("This older plan saved its settings without price bars. Load its original study in Robustness "
+                "to evaluate it, or freeze a new plan with a saved snapshot.")
+    with st.expander("Saved assumptions and provenance"):
+        st.json(record)
+    if st.button("Prepare frozen study download", disabled=not snapshot, key="saved_holdout_prepare"):
+        try:
+            st.session_state.saved_holdout_bundle = (chosen, export_frozen_bundle(store, chosen))
+        except (ValueError, RuntimeError, OSError) as exc:
+            st.error(str(exc))
+    prepared = st.session_state.get("saved_holdout_bundle")
+    if prepared and prepared[0] == chosen:
+        st.download_button("Download frozen study bundle", prepared[1], file_name=f"frozen_study_{chosen[:12]}.zip",
+                           mime="application/zip", key="saved_holdout_download")
+    if st.button("Evaluate saved holdout", type="primary", disabled=not snapshot, key="saved_holdout_run"):
+        progress = st.progress(0.0, text="Restoring saved inputs and evaluating…")
+        try:
+            identifier, result = evaluate_frozen_holdout(store, chosen,
+                                                        progress=lambda done, total: progress.progress(done / total))
+            st.session_state.saved_holdout_result = (chosen, identifier, result)
+        except (ValueError, RuntimeError, OSError) as exc:
+            st.session_state.pop("saved_holdout_result", None)
+            st.error(str(exc))
+        finally:
+            progress.empty()
+    saved = st.session_state.get("saved_holdout_result")
+    if saved and saved[0] == chosen:
+        st.warning("This remains a user-declared holdout. Saved inputs make it reproducible; they do not prove "
+                   "the historical period was unseen or preserve an original vendor point-in-time vintage.")
+        display_backtest(saved[2], saved[1], "saved_holdout_result")
