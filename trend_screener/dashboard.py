@@ -712,8 +712,12 @@ def run_screen(config: ScreenConfig, settings):
             *universe.ticker.tolist(), *([snapshot_config.risk.benchmark] if snapshot_config.risk.enabled else [])]))
         data_key = (settings["source"], settings["cache_only"], tuple(download_tickers),
                     tuple(sorted(settings["ticker_aliases"].items())), str(start), str(end))
+        # Retry previously failed symbols instead of permanently reusing an
+        # in-memory batch whose latest price is missing.
+        prior_batch = st.session_state.get("raw_batch")
         reuse = (not settings["force"] and not settings["retry_missing"] and not settings.get("refresh_now", False)
-                 and st.session_state.get("data_key") == data_key)
+                 and st.session_state.get("data_key") == data_key
+                 and prior_batch is not None and not prior_batch.errors)
         if reuse:
             batch = st.session_state.raw_batch
             progress.progress(0.55, text="Reusing loaded prices; applying new rules…")
